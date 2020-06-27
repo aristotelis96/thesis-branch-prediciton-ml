@@ -69,9 +69,9 @@ class RNNLayer(nn.Module):
             self.rnn_out, self.h = self.rnn(seq)
         
         if normalization:
-            out = self.normalization(self.rnn_out)
+            self.rnn_out = self.normalization(self.rnn_out)
             
-        out = self.fc(out)   
+        out = self.fc(self.rnn_out)   
         ## out = self.fc(self.rnn_out.view(bsize,-1))        
         return self.softmax(out)
 
