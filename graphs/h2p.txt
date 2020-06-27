@@ -1,0 +1,58 @@
+600.perlbench_s-1273B. H2P: 27
+600.perlbench_s-210B. H2P: 33
+600.perlbench_s-570B. H2P: 30
+605.mcf_s-1152B. H2P: 29
+605.mcf_s-1536B. H2P: 9
+605.mcf_s-1554B. H2P: 3
+605.mcf_s-1644B. H2P: 27
+605.mcf_s-472B. H2P: 7
+605.mcf_s-484B. H2P: 10
+605.mcf_s-665B. H2P: 29
+605.mcf_s-782B. H2P: 16
+605.mcf_s-994B. H2P: 20
+620.omnetpp_s-141B. H2P: 20
+620.omnetpp_s-874B. H2P: 18
+623.xalancbmk_s-10B. H2P: 3
+623.xalancbmk_s-165B. H2P: 1
+623.xalancbmk_s-202B. H2P: 1
+623.xalancbmk_s-325B. H2P: 10
+623.xalancbmk_s-592B. H2P: 8
+623.xalancbmk_s-700B. H2P: 9
+625.x264_s-12B. H2P: 18
+625.x264_s-18B. H2P: 27
+625.x264_s-20B. H2P: 19
+625.x264_s-33B. H2P: 23
+625.x264_s-39B. H2P: 34
+631.deepsjeng_s-928B. H2P: 169
+641.leela_s-1052B. H2P: 103
+641.leela_s-1083B. H2P: 104
+641.leela_s-149B. H2P: 112
+641.leela_s-334B. H2P: 109
+641.leela_s-602B. H2P: 115
+641.leela_s-800B. H2P: 99
+641.leela_s-862B. H2P: 99
+648.exchange2_s-1227B. H2P: 27
+648.exchange2_s-1247B. H2P: 20
+648.exchange2_s-1511B. H2P: 19
+648.exchange2_s-1699B. H2P: 19
+648.exchange2_s-1712B. H2P: 19
+648.exchange2_s-210B. H2P: 19
+648.exchange2_s-353B. H2P: 19
+648.exchange2_s-387B. H2P: 27
+648.exchange2_s-584B. H2P: 19
+648.exchange2_s-72B. H2P: 18
+657.xz_s-2302B. H2P: 77
+657.xz_s-3167B. H2P: 60
+657.xz_s-4994B. H2P: 136
+657.xz_s-56B. H2P: 0
+
+Average:
+('600.perlbench', 30)
+('605.mcf', 16)
+('620.omnetpp', 19)
+('623.xalancbmk', 5)
+('625.x264', 24)
+('631.deepsjeng', 169)
+('641.leela', 105)
+('648.exchange2', 20)
+('657.xz', 68)
