@@ -85,6 +85,8 @@ num_layers = 1
 normalization = False
 input_dim = 2
 rnn_layer = 'lstm'
+ContinueFromCheckpoint = False
+
 ## Model 
 model = RNNLayer(rnn_layer=rnn_layer, input_dim=input_dim, out_dim=n_class, num_layers=num_layers, normalization=normalization).to(device)
 
@@ -130,7 +132,6 @@ total_Validation_accuracy = []
 
 epochStart = 0
 
-ContinueFromCheckpoint = False
 if ContinueFromCheckpoint:
     checkpoint = torch.load("checkpoint.pt")
     epochStart = checkpoint['epoch'] + 1
