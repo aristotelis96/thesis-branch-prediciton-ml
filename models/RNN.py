@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 import time
 import read
 from read import BranchDataset
-
+import os
 
 def init_lstm(lstm, lstm_hidden_size, forget_bias=2):
     for name,weights in lstm.named_parameters():
@@ -85,7 +85,11 @@ num_layers = 1
 normalization = False
 input_dim = 2
 rnn_layer = 'lstm'
+
 ContinueFromCheckpoint = False
+
+epochStart = 0
+epochEnd = 100
 
 ## Model 
 model = RNNLayer(rnn_layer=rnn_layer, input_dim=input_dim, out_dim=n_class, num_layers=num_layers, normalization=normalization).to(device)
@@ -108,10 +112,7 @@ print("Loading ValidationDataset")
 #valid = torch.load("valid100K-110K.pt")
 #valid = read.read("600.perlbench_s-1273B.champsimtrace.xz._.dataset_unique.txt.gz", 100000, 110000)
 #train, valid = read.readTrainValid("620.omnetpp_s-141B.champsimtrace.xz._.dataset_unique.txt.gz", 100, 60000)
-train, valid = read.readFileList(["600.perlbench_s-1273B.champsimtrace.xz._.dataset_unique.txt.gz", "620.omnetpp_s-141B.champsimtrace.xz._.dataset_unique.txt.gz"], 100,60000)
-
-#train = (0 - 100) * torch.randn(10000, 100,2) + 100
-#valid = (0 - 100) * torch.randn(1000, 100,2) + 100
+train, valid = read.readFileList(["600.perlbench_s-1273B.champsimtrace.xz._.dataset_unique.txt.gz", "620.omnetpp_s-141B.champsimtrace.xz._.dataset_unique.txt.gz"], 100,600)
 
 training_set, validation_set = BranchDataset(train), BranchDataset(valid)
 
@@ -130,8 +131,6 @@ total_Validation_loss = []
 total_Validation_accuracy = []
 
 
-epochStart = 0
-
 if ContinueFromCheckpoint:
     checkpoint = torch.load("checkpoint.pt")
     epochStart = checkpoint['epoch'] + 1
@@ -141,9 +140,16 @@ if ContinueFromCheckpoint:
     total_Train_accuracy = checkpoint['total_Train_accuracy']
     total_Validation_loss = checkpoint['total_Validation_loss']
     total_Validation_accuracy = checkpoint['total_Validation_accuracy']
+else:
+    try:
+        os.remove("checkpoint.pt")
+    except:
+        pass
+
+
 #TRAINING
 now = time.time()
-for epoch in range(epochStart, 30):
+for epoch in range(epochStart, epochEnd):
     print("-------")
     #print("Epoch : " + str(epoch))
     loss_values = []
@@ -206,13 +212,16 @@ torch.save({
         'epoch': epoch,
         'model_architecture': str(model),
         'model_specifics': {
-            'n_class' : 64,
-            'num_layers' : 1,
-            'normalization' : False,
-            'input_dim' : 2,
-            'rnn_layer' : 'lstm'
+            'n_class' : n_class,
+            'num_layers' : num_layers,
+            'normalization' : normalization,
+            'input_dim' : input_dim,
+            'rnn_layer' : rnn_layer
         },
-        'input_Data': '1-hot sequence-200 only Taken/NotTaken, no program counter',
+        'input_Data': {
+            'type': '1-hot sequence-200 only Taken/NotTaken, no program counter',
+            'batch_size': paramsTrain['batch_size']
+        },
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
         'total_Validation_accuracy': total_Validation_accuracy,
