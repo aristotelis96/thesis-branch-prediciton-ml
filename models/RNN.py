@@ -215,7 +215,7 @@ torch.save({
             'rnn_layer' : rnn_layer
         },
         'input_Data': {
-            'input_bench': input_bench
+            'input_bench': input_bench,
             'type': '1-hot sequence-200 only Taken/NotTaken, no program counter',
             'batch_size': paramsTrain['batch_size']
         },
