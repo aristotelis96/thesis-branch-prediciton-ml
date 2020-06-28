@@ -91,6 +91,7 @@ ContinueFromCheckpoint = False
 epochStart = 0
 epochEnd = 100
 
+input_bench = ["600.perlbench_s-1273B.champsimtrace.xz._.dataset_unique.txt.gz"]
 ## Model 
 model = RNNLayer(rnn_layer=rnn_layer, input_dim=input_dim, out_dim=n_class, num_layers=num_layers, normalization=normalization).to(device)
 
@@ -106,13 +107,8 @@ paramsValid = {'batch_size': 10000,
           'num_workers': 4}
 
 print("Loading TrainDataset")
-#train = torch.load("train50K.pt")
-#train = read.read("600.perlbench_s-1273B.champsimtrace.xz._.dataset_unique.txt.gz", 100, 50000)
 print("Loading ValidationDataset")
-#valid = torch.load("valid100K-110K.pt")
-#valid = read.read("600.perlbench_s-1273B.champsimtrace.xz._.dataset_unique.txt.gz", 100000, 110000)
-#train, valid = read.readTrainValid("620.omnetpp_s-141B.champsimtrace.xz._.dataset_unique.txt.gz", 100, 60000)
-train, valid = read.readFileList(["600.perlbench_s-1273B.champsimtrace.xz._.dataset_unique.txt.gz", "620.omnetpp_s-141B.champsimtrace.xz._.dataset_unique.txt.gz"], 100,600)
+train, valid = read.readFileList(input_bench, 100,60000)
 
 training_set, validation_set = BranchDataset(train), BranchDataset(valid)
 
@@ -219,6 +215,7 @@ torch.save({
             'rnn_layer' : rnn_layer
         },
         'input_Data': {
+            'input_bench': input_bench
             'type': '1-hot sequence-200 only Taken/NotTaken, no program counter',
             'batch_size': paramsTrain['batch_size']
         },
