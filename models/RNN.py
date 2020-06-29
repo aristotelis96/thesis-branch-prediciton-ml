@@ -142,11 +142,7 @@ if ContinueFromCheckpoint:
     total_Train_accuracy = checkpoint['total_Train_accuracy']
     total_Validation_loss = checkpoint['total_Validation_loss']
     total_Validation_accuracy = checkpoint['total_Validation_accuracy']
-else:
-    try:
-        os.remove("checkpoint.pt")
-    except:
-        pass
+
 
 
 #TRAINING
