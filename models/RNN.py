@@ -63,13 +63,12 @@ class RNNLayer(nn.Module):
         if self.rnn_layer == 'transformer':
             self.rnn_out = self.rnn(seq)
         elif self.rnn_layer =='lstm':
-            self.rnn_out, (self.h, self.c) = self.rnn(seq)
-            self.rnn_out = self.h[-1]            
+            self.rnn_out, (self.h, self.c) = self.rnn(seq)             
         elif self.rnn_layer == 'gru': 
             self.rnn_out, self.h = self.rnn(seq)
         
         if normalization:
-            self.rnn_out = self.normalization(self.rnn_out)
+            self.rnn_out = self.normalization(self.h[-1])
             
         out = self.fc(self.rnn_out)   
         ## out = self.fc(self.rnn_out.view(bsize,-1))        
@@ -78,20 +77,24 @@ class RNNLayer(nn.Module):
 ## GPU/CPU ##
 device_idx = 0
 device = torch.device("cuda:"+str(device_idx) if torch.cuda.is_available() else "cpu")
-#device = torch.device("cpu")
 
-n_class = 64
+## Parameters ##
+n_class = 128
 num_layers = 1
-normalization = False
+normalization = True
 input_dim = 2
 rnn_layer = 'lstm'
 
+# learning Rate
+learning_rate = 1e-4
+
+# Load a checkpoint?
 ContinueFromCheckpoint = False
 
+# Epoch
 epochStart = 0
-epochEnd = 100
+epochEnd = 50
 
-input_bench = ["600.perlbench_s-1273B.champsimtrace.xz._.dataset_unique.txt.gz"]
 ## Model 
 model = RNNLayer(rnn_layer=rnn_layer, input_dim=input_dim, out_dim=n_class, num_layers=num_layers, normalization=normalization).to(device)
 
@@ -100,15 +103,19 @@ print(model)
 # Parameters
 paramsTrain = {'batch_size': 64,
           'shuffle': True,
-
-          'num_workers': 3}
+          'num_workers': 4}
 paramsValid = {'batch_size': 10000,
           'shuffle': False,
           'num_workers': 4}
 
+# Benchmark
+input_bench = ["600.perlbench_s-1273B.champsimtrace.xz._.dataset_unique.txt.gz"]
+startSample, endSample = 100, 70000
+inputDescription = '1-hot sequence-200 only Taken/NotTaken, no program counter'
+
 print("Loading TrainDataset")
 print("Loading ValidationDataset")
-train, valid = read.readFileList(input_bench, 100,60000)
+train, valid = read.readFileList(input_bench, startSample,endSample)
 
 training_set, validation_set = BranchDataset(train), BranchDataset(valid)
 
@@ -118,7 +125,6 @@ valid_loader = DataLoader(validation_set, **paramsValid)
 ##
 ## Optimize 
 criterion = nn.CrossEntropyLoss()
-learning_rate = 1e-4
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=learning_rate/10)
 
 total_Train_loss = []
@@ -200,31 +206,31 @@ for epoch in range(epochStart, epochEnd):
     if(epochAccuracy>0.99):
         break
         # ADD METRIC (ACCURACY? Note batching)
-    #print(loss_values)
+    ## SAVE A CHECKPOINT as "checkpoint.pt"
+    torch.save({
+            'epoch': epoch,
+            'model_architecture': str(model),
+            'model_specifics': {
+                'n_class' : n_class,
+                'num_layers' : num_layers,
+                'normalization' : normalization,
+                'input_dim' : input_dim,
+                'rnn_layer' : rnn_layer
+            },
+            'input_Data': {
+                'input_bench': input_bench,
+                'type': inputDescription,
+                'batch_size': paramsTrain['batch_size']
+            },
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'total_Validation_accuracy': total_Validation_accuracy,
+            'total_Validation_loss': total_Validation_loss,
+            'total_Train_loss': total_Train_loss,
+            'total_Train_accuracy': total_Train_accuracy
+        }, "checkpoint.pt")
+
 end = time.time()
 print("total time taken to train: ", end-now)
-## SAVE A CHECKPOINT as "checkpoint.pt"
-torch.save({
-        'epoch': epoch,
-        'model_architecture': str(model),
-        'model_specifics': {
-            'n_class' : n_class,
-            'num_layers' : num_layers,
-            'normalization' : normalization,
-            'input_dim' : input_dim,
-            'rnn_layer' : rnn_layer
-        },
-        'input_Data': {
-            'input_bench': input_bench,
-            'type': '1-hot sequence-200 only Taken/NotTaken, no program counter',
-            'batch_size': paramsTrain['batch_size']
-        },
-        'model_state_dict': model.state_dict(),
-        'optimizer_state_dict': optimizer.state_dict(),
-        'total_Validation_accuracy': total_Validation_accuracy,
-        'total_Validation_loss': total_Validation_loss,
-        'total_Train_loss': total_Train_loss,
-        'total_Train_accuracy': total_Train_accuracy
-    }, "checkpoint.pt")
 
 print("Finish")
