@@ -110,7 +110,7 @@ paramsValid = {'batch_size': 10000,
 
 # Benchmark
 input_bench = ["600.perlbench_s-1273B.champsimtrace.xz._.dataset_unique.txt.gz"]
-startSample, endSample = 100, 70000
+startSample, endSample = 100, 100000
 inputDescription = '1-hot sequence-200 only Taken/NotTaken, no program counter'
 
 print("Loading TrainDataset")
@@ -147,85 +147,101 @@ if ContinueFromCheckpoint:
 
 #TRAINING
 now = time.time()
-for epoch in range(epochStart, epochEnd):
-    print("-------")
-    #print("Epoch : " + str(epoch))
-    loss_values = []
-    running_loss = 0.0
-    correct = 0.0
-    for i, (X, labels) in enumerate(train_loader):
-        model.train() 
+epoch = epochStart
+while epoch < epochEnd:
+    try:
+        print("-------")
+        #print("Epoch : " + str(epoch))
+        loss_values = []
+        running_loss = 0.0
+        correct = 0.0
+        for i, (X, labels) in enumerate(train_loader):
+            model.train() 
+            
+            X = X.to(device)
+            labels = labels.to(device)
+
+            optimizer.zero_grad()
+            outputs = model(X.float())
+
+            loss = criterion(outputs, labels.long()) 
+
+            
+
+            loss.backward()
+
+            optimizer.step()
+            # print statistics
+            running_loss += loss.item()
+            correct += float((outputs.argmax(axis=1).cpu() == labels.cpu()).sum())
+        train_acc = correct/float(len(training_set))
+        train_loss = running_loss/float(len(train_loader))
+        total_Train_accuracy.append(train_acc)
+        total_Train_loss.append(train_loss)
+        print("Epoch: ", epoch, "train loss:", train_loss, " acc:", train_acc)
+        #if(correct/float(len(training_set))>0.99):
+            #break
+        correct = 0
+        for X_val, Validlabels in valid_loader:
+            model.eval() 
+
+            X_val = X_val.to(device)
+            Validlabels = Validlabels.to(device)
+
+            outputs = model(X_val.float())
+
+            loss = criterion(outputs, Validlabels.long())
+
+            loss_values.append(loss.item())    
         
-        X = X.to(device)
-        labels = labels.to(device)
+            correct += (outputs.argmax(axis=1).cpu() == Validlabels.cpu()).sum()
+        epochLoss = float(sum(loss_values))/float(len(valid_loader))
+        total_Validation_loss.append(epochLoss)
 
-        optimizer.zero_grad()
-        outputs = model(X.float())
-
-        loss = criterion(outputs, labels.long()) 
-
-        
-
-        loss.backward()
-
-        optimizer.step()
-        # print statistics
-        running_loss += loss.item()
-        correct += float((outputs.argmax(axis=1).cpu() == labels.cpu()).sum())
-    train_acc = correct/float(len(training_set))
-    train_loss = running_loss/float(len(train_loader))
-    total_Train_accuracy.append(train_acc)
-    total_Train_loss.append(train_loss)
-    print("Epoch: ", epoch, "train loss:", train_loss, " acc:", train_acc)
-    #if(correct/float(len(training_set))>0.99):
-        #break
-    correct = 0
-    for X_val, Validlabels in valid_loader:
-        model.eval() 
-
-        X_val = X_val.to(device)
-        Validlabels = Validlabels.to(device)
-
-        outputs = model(X_val.float())
-
-        loss = criterion(outputs, Validlabels.long())
-
-        loss_values.append(loss.item())    
+        epochAccuracy = float(correct)/float(len(validation_set))
+        total_Validation_accuracy.append(epochAccuracy)
+        print("Epoch: ", epoch, "validation: loss:", epochLoss ,"acc:" , epochAccuracy)
+        if(epochAccuracy>0.99):
+            break
+            # ADD METRIC (ACCURACY? Note batching)
+        ## SAVE A CHECKPOINT as "checkpoint.pt"
+        torch.save({
+                'epoch': epoch,
+				'learning_rate': learning_rate,
+                'model_architecture': str(model),
+                'model_specifics': {
+                    'n_class' : n_class,
+                    'num_layers' : num_layers,
+                    'normalization' : normalization,
+                    'input_dim' : input_dim,
+                    'rnn_layer' : rnn_layer
+                },
+                'input_Data': {
+                    'input_bench': input_bench,
+                    'type': inputDescription,
+                    'batch_size': paramsTrain['batch_size']
+                },
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'total_Validation_accuracy': total_Validation_accuracy,
+                'total_Validation_loss': total_Validation_loss,
+                'total_Train_loss': total_Train_loss,
+                'total_Train_accuracy': total_Train_accuracy
+            }, "checkpoint.pt")
+    except Exception as e:
+        print("Error occured, reloading model from previous iteration and skipping epoch increase")
+        print(e)
+        checkpoint = torch.load("checkpoint.pt")
+        epochStart = checkpoint['epoch'] + 1
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        total_Train_loss = checkpoint['total_Train_loss']
+        total_Train_accuracy = checkpoint['total_Train_accuracy']
+        total_Validation_loss = checkpoint['total_Validation_loss']
+        total_Validation_accuracy = checkpoint['total_Validation_accuracy']        
+        continue
+    epoch+=1 
     
-        correct += (outputs.argmax(axis=1).cpu() == Validlabels.cpu()).sum()
-    epochLoss = float(sum(loss_values))/float(len(valid_loader))
-    total_Validation_loss.append(epochLoss)
-
-    epochAccuracy = float(correct)/float(len(validation_set))
-    total_Validation_accuracy.append(epochAccuracy)
-    print("Epoch: ", epoch, "validation: loss:", epochLoss ,"acc:" , epochAccuracy)
-    if(epochAccuracy>0.99):
-        break
-        # ADD METRIC (ACCURACY? Note batching)
-    ## SAVE A CHECKPOINT as "checkpoint.pt"
-    torch.save({
-            'epoch': epoch,
-            'model_architecture': str(model),
-            'model_specifics': {
-                'n_class' : n_class,
-                'num_layers' : num_layers,
-                'normalization' : normalization,
-                'input_dim' : input_dim,
-                'rnn_layer' : rnn_layer
-            },
-            'input_Data': {
-                'input_bench': input_bench,
-                'type': inputDescription,
-                'batch_size': paramsTrain['batch_size']
-            },
-            'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'total_Validation_accuracy': total_Validation_accuracy,
-            'total_Validation_loss': total_Validation_loss,
-            'total_Train_loss': total_Train_loss,
-            'total_Train_accuracy': total_Train_accuracy
-        }, "checkpoint.pt")
-
 end = time.time()
 print("total time taken to train: ", end-now)
 
