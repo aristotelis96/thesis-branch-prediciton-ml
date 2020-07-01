@@ -134,15 +134,18 @@ total_Validation_accuracy = []
 
 
 if ContinueFromCheckpoint:
-    checkpoint = torch.load("checkpoint.pt")
-    epochStart = checkpoint['epoch'] + 1
-    model.load_state_dict(checkpoint['model_state_dict'])
-    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    total_Train_loss = checkpoint['total_Train_loss']
-    total_Train_accuracy = checkpoint['total_Train_accuracy']
-    total_Validation_loss = checkpoint['total_Validation_loss']
-    total_Validation_accuracy = checkpoint['total_Validation_accuracy']
-
+    try:
+        checkpoint = torch.load("checkpoint.pt")
+        epochStart = checkpoint['epoch'] + 1
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        total_Train_loss = checkpoint['total_Train_loss']
+        total_Train_accuracy = checkpoint['total_Train_accuracy']
+        total_Validation_loss = checkpoint['total_Validation_loss']
+        total_Validation_accuracy = checkpoint['total_Validation_accuracy']
+    except:
+        print("FAILED TO LOAD FROM CHECKPOINT, CHECK FILE")
+        print("STARTING TRAINING WITHOUT LOADING FROM CHECKPOINT FROM EPOCH 0")        
 
 
 #TRAINING
