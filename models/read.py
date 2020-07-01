@@ -11,20 +11,34 @@ device = torch.device("cuda:"+str(device_idx) if torch.cuda.is_available() else 
 # Dataset Folder #
 DatasetDir="C:/Users/Aristotelis/Desktop/diploma/Datasets/"
 class BranchDataset(Dataset):
-    def __init__(self, npy, transform=None):
+    def __init__(self, npy, transform=None, encodePCList=False):
         #self.data = np.load(npyFile)
         self.data = npy
+        self.encodePCList=encodePCList
 
     def __len__(self):
         return len(self.data)
     
-    def __getitem__(self, idx):
-        sample = self.data[idx][1:].clone().detach() 
-        for s in sample:
-            if(s[1]==0.0):
-                s[0], s[1] = 1.0, 0.0
-            else:
-                s[0], s[1] = 0.0 , 1.0
+    def __getitem__(self, idx):    
+        if(self.encodePCList):
+            sample = self.data[idx][1:].clone().detach()
+            encodedPCArray = torch.zeros(200, dtype=torch.int64)
+            for i,s in enumerate(sample):
+                pc = int(s[0])
+                # Take 7 LSB and shift 1 possition
+                encodedPC = (pc & 0b1111111) << 1
+                # Add taken or not taken
+                encodedPC += int(self.data[idx][0][1])
+                encodedPCArray[i] = encodedPC
+            sample = encodedPCArray.clone().detach()
+
+        else:
+            sample = self.data[idx][1:].clone().detach() 
+            for s in sample:
+                if(s[1]==0.0):
+                    s[0], s[1] = 1.0, 0.0
+                else:
+                    s[0], s[1] = 0.0 , 1.0
         #sample[0][1]=0.5
         #sample = sample.flip([0])  
         label = self.data[idx][0][1].clone().detach()
@@ -73,8 +87,8 @@ def read(file, start=0, end=100000):
 
 def readTrainValid(file, start=0, end=100000, ratio=0.9):
     middle = int((end-start)*ratio)
-    train = read(file, start, middle)
-    valid = read(file, middle+1, end)
+    train = read(file, start, start+middle)
+    valid = read(file, start+middle+1, end)
     return train, valid
 
 def readFileList(fileList, start=0, end=100000, ratio=0.9):
