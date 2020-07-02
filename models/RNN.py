@@ -110,17 +110,10 @@ paramsValid = {'batch_size': 10000,
 
 # Benchmark
 input_bench = ["600.perlbench_s-1273B.champsimtrace.xz._.dataset_unique.txt.gz"]
-startSample, endSample = 100, 100000
+startSample, endSample = 100, 250000
+ratio = 0.6
 inputDescription = '1-hot sequence-200 only Taken/NotTaken, no program counter'
 
-print("Loading TrainDataset")
-print("Loading ValidationDataset")
-train, valid = read.readFileList(input_bench, startSample,endSample)
-
-training_set, validation_set = BranchDataset(train), BranchDataset(valid)
-
-train_loader = DataLoader(training_set, **paramsTrain)
-valid_loader = DataLoader(validation_set, **paramsValid)
 
 ##
 ## Optimize 
@@ -146,6 +139,16 @@ if ContinueFromCheckpoint:
     except:
         print("FAILED TO LOAD FROM CHECKPOINT, CHECK FILE")
         print("STARTING TRAINING WITHOUT LOADING FROM CHECKPOINT FROM EPOCH 0")        
+
+
+print("Loading TrainDataset")
+print("Loading ValidationDataset")
+train, valid = read.readFileList(input_bench, startSample,endSample, ratio=ratio)
+
+training_set, validation_set = BranchDataset(train), BranchDataset(valid)
+
+train_loader = DataLoader(training_set, **paramsTrain)
+valid_loader = DataLoader(validation_set, **paramsValid)
 
 
 #TRAINING
@@ -221,6 +224,11 @@ while epoch < epochEnd:
                 },
                 'input_Data': {
                     'input_bench': input_bench,
+                    'samples': {
+                        'startSample': startSample,
+                        'endSample': endSample,
+                        'ratio': ratio
+                    },
                     'type': inputDescription,
                     'batch_size': paramsTrain['batch_size']
                 },

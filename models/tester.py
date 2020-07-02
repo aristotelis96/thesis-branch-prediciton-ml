@@ -98,20 +98,15 @@ criterion = nn.CrossEntropyLoss()
 print(model)
 ## TEST DATALOADER
 # Parameters
-paramsValid = {'batch_size': 15000,
+paramsValid = {'batch_size': 10000,
           'shuffle': False,
           'num_workers': 4}
 
 # Benchmark
 input_bench = ["600.perlbench_s-1273B.champsimtrace.xz._.dataset_unique.txt.gz"]
-startSample, endSample = 100000, 500000
-
-print("Loading ValidationDataset")
-_, valid = read.readFileList(input_bench, startSample,endSample, ratio=0.0)
+startSample, endSample = 200000, 300000
 
 validation_set = BranchDataset(valid)
-
-valid_loader = DataLoader(validation_set, **paramsValid)
 
 
 try:
@@ -123,6 +118,14 @@ except:
 
 
 
+print("Loading ValidationDataset")
+_, valid = read.readFileList(input_bench, startSample,endSample, ratio=0.0)
+
+validation_set = BranchDataset(valid)
+
+print("len of validation set:", len(validation_set))
+
+valid_loader = DataLoader(validation_set, **paramsValid)
 print("-------")
 #print("Epoch : " + str(epoch))
 loss_values = []

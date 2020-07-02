@@ -85,7 +85,7 @@ def read(file, start=0, end=100000):
     #print(sample)                
     return data
 
-def readTrainValid(file, start=0, end=100000, ratio=0.9):
+def readTrainValid(file, start=0, end=100000, ratio=0.6):
     middle = int((end-start)*ratio)
     train = read(file, start, start+middle)
     valid = read(file, start+middle+1, end)
