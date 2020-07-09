@@ -52,6 +52,8 @@ class RNNLayer(nn.Module):
 
         if (normalization):
             self.normalization = nn.BatchNorm1d(out_dim)
+        else:
+            self.normalization = None
 
         self.fc = nn.Linear(out_dim, 2) # nn.Linear(out_dim*200, 2)
         
@@ -67,84 +69,87 @@ class RNNLayer(nn.Module):
         elif self.rnn_layer == 'gru': 
             self.rnn_out, self.h = self.rnn(seq)
         
-        if normalization:
+        if self.normalization is not None:
             self.rnn_out = self.normalization(self.h[-1])
             
         out = self.fc(self.rnn_out)   
         ## out = self.fc(self.rnn_out.view(bsize,-1))        
         return self.softmax(out)
 
-## GPU/CPU ##
-device_idx = 0
-device = torch.device("cuda:"+str(device_idx) if torch.cuda.is_available() else "cpu")
+def main():
+    ## GPU/CPU ##
+    device_idx = 0
+    device = torch.device("cuda:"+str(device_idx) if torch.cuda.is_available() else "cpu")
 
-## Parameters ##
-n_class = 256
-num_layers = 1
-normalization = True
-input_dim = 2
-rnn_layer = 'lstm'
+    ## Parameters ##
+    n_class = 256
+    num_layers = 2
+    normalization = True
+    input_dim = 2
+    rnn_layer = 'lstm'
 
-# Name of pt model
-modelFolder = "./"
-modelName = "lstm256_1layer.pt"
+    # Name of pt model
+    modelFolder = "./pt/"
+    modelName = "lstm128_2layer_lr1e-4.pt"
 
-modelName = modelFolder + modelName
+    modelName = modelFolder + modelName
+    ## Model 
+    model = RNNLayer(rnn_layer=rnn_layer, input_dim=input_dim, out_dim=n_class, num_layers=num_layers, normalization=normalization).to(device)
+    criterion = nn.CrossEntropyLoss()
 
-## Model 
-model = RNNLayer(rnn_layer=rnn_layer, input_dim=input_dim, out_dim=n_class, num_layers=num_layers, normalization=normalization).to(device)
-criterion = nn.CrossEntropyLoss()
+    print(model)
+    ## TEST DATALOADER
+    # Parameters
+    paramsValid = {'batch_size': 10000,
+            'shuffle': False,
+            'num_workers': 4}
 
-print(model)
-## TEST DATALOADER
-# Parameters
-paramsValid = {'batch_size': 10000,
-          'shuffle': False,
-          'num_workers': 4}
-
-# Benchmark
-input_bench = ["600.perlbench_s-1273B.champsimtrace.xz._.dataset_unique.txt.gz"]
-startSample, endSample = 200000, 300000
-
-validation_set = BranchDataset(valid)
-
-
-try:
-    checkpoint = torch.load(modelName)
-    model.load_state_dict(checkpoint['model_state_dict'])
-except:
-    print("FAILED TO LOAD FROM CHECKPOINT, CHECK FILE")
-    exit()
+    # Benchmark
+    input_bench = ["600.perlbench_s-1273B.champsimtrace.xz._.dataset_unique.txt.gz"]
+    startSample, endSample = 300000, 700000
 
 
 
-print("Loading ValidationDataset")
-_, valid = read.readFileList(input_bench, startSample,endSample, ratio=0.0)
+    try:
+        checkpoint = torch.load(modelName)
+        model.load_state_dict(checkpoint['model_state_dict'])
+    except:
+        print("FAILED TO LOAD FROM CHECKPOINT, CHECK FILE")
+        exit()
 
-validation_set = BranchDataset(valid)
 
-print("len of validation set:", len(validation_set))
 
-valid_loader = DataLoader(validation_set, **paramsValid)
-print("-------")
-#print("Epoch : " + str(epoch))
-loss_values = []
-running_loss = 0.0
-correct = 0.0
-for X_val, Validlabels in valid_loader:
-    model.eval() 
+    print("Loading ValidationDataset")
+    _, valid = read.readFileList(input_bench, startSample,endSample, ratio=0.0)
 
-    X_val = X_val.to(device)
-    Validlabels = Validlabels.to(device)
+    validation_set = BranchDataset(valid)
 
-    outputs = model(X_val.float())
+    print("len of validation set:", len(validation_set))
 
-    loss = criterion(outputs, Validlabels.long())
+    valid_loader = DataLoader(validation_set, **paramsValid)
+    print("-------")
+    #print("Epoch : " + str(epoch))
+    loss_values = []
+    running_loss = 0.0
+    correct = 0.0
+    for X_val, Validlabels in valid_loader:
+        model.eval() 
 
-    loss_values.append(loss.item())    
+        X_val = X_val.to(device)
+        Validlabels = Validlabels.to(device)
 
-    correct += (outputs.argmax(axis=1).cpu() == Validlabels.cpu()).sum()
-epochLoss = float(sum(loss_values))/float(len(valid_loader))
-epochAccuracy = float(correct)/float(len(validation_set))
-print("validation: loss:", epochLoss ,"acc:" , epochAccuracy)
-print("Finish")
+        outputs = model(X_val.float())
+
+        loss = criterion(outputs, Validlabels.long())
+
+        loss_values.append(loss.item())    
+
+        correct += (outputs.argmax(axis=1).cpu() == Validlabels.cpu()).sum()
+    epochLoss = float(sum(loss_values))/float(len(valid_loader))
+    epochAccuracy = float(correct)/float(len(validation_set))
+    print("validation: loss:", epochLoss ,"acc:" , epochAccuracy)
+    print("Finish")
+
+
+if __name__ == '__main__':
+    main()
