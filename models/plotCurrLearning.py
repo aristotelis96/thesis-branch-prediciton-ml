@@ -1,23 +1,14 @@
 import matplotlib.pyplot as plt
+import torch
 
 lossT, lossV, accT, accV = [],[],[],[]
 
-with open("currLearning.txt") as fp:
-    for line in fp:
-        if "train" in line:
-            words = line.split(" ")
-            lossT.append(float(words[5]))
-            accT.append(float(words[-1]))
-        if "valid" in line:
-            words = line.split(" ")
-            lossV.append(float(words[5]))
-            accV.append(float(words[-1]))
+ck = torch.load('checkpoint.pt')
 
 
-
-plt.plot(lossT, label='lossTrain' ,color='red')
-plt.plot(accT, label='accTrain' ,color='black')
-plt.plot(lossV, label='lossValid' ,color='orange')
-plt.plot(accV, label='accValid' ,color='green')
-plt.legend()
+plt.plot(ck['total_Train_loss'], label='LossTrain' ,color='gray')
+plt.plot(ck['total_Train_accuracy'], label='AccTrain' ,color='lime')
+plt.plot(ck['total_Validation_loss'], label='LossValid' ,color='black')
+plt.plot(ck['total_Validation_accuracy'], label='AccValid' ,color='red')
+plt.legend(loc='right')
 plt.savefig("currentLearning.png")
