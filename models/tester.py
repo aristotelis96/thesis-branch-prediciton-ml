@@ -105,8 +105,8 @@ def main():
             'num_workers': 4}
 
     # Benchmark
-    input_bench = ["600.perlbench_s-1273B.champsimtrace.xz._.dataset_unique.txt.gz"]
-    startSample, endSample = 300000, 700000
+    input_bench = ["600.perlbench_s-210B.champsimtrace.xz._.dataset_unique.txt.gz"]
+    startSample, endSample = 100, 400000
 
 
 
