@@ -112,6 +112,7 @@ paramsValid = {'batch_size': 10000,
 input_bench = ["600.perlbench_s-1273B.champsimtrace.xz._.dataset_unique.txt.gz"]
 startSample, endSample = 100, 250000
 ratio = 0.6
+encodedPCList=True
 inputDescription = '1-hot sequence-200 only Taken/NotTaken, no program counter'
 
 
@@ -138,14 +139,13 @@ if ContinueFromCheckpoint:
         total_Validation_accuracy = checkpoint['total_Validation_accuracy']
     except:
         print("FAILED TO LOAD FROM CHECKPOINT, CHECK FILE")
-        print("STARTING TRAINING WITHOUT LOADING FROM CHECKPOINT FROM EPOCH 0")        
-
+        exit()
 
 print("Loading TrainDataset")
 print("Loading ValidationDataset")
 train, valid = read.readFileList(input_bench, startSample,endSample, ratio=ratio)
 
-training_set, validation_set = BranchDataset(train), BranchDataset(valid)
+training_set, validation_set = BranchDataset(train, encodedPCList=encodedPCList), BranchDataset(valid, encodedPCList=encodedPCList)
 
 train_loader = DataLoader(training_set, **paramsTrain)
 valid_loader = DataLoader(validation_set, **paramsValid)
@@ -227,7 +227,8 @@ while epoch < epochEnd:
                     'samples': {
                         'startSample': startSample,
                         'endSample': endSample,
-                        'ratio': ratio
+                        'ratio': ratio,
+                        'encodedPCList', encodedPCList
                     },
                     'type': inputDescription,
                     'batch_size': paramsTrain['batch_size']
