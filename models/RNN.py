@@ -228,7 +228,7 @@ while epoch < epochEnd:
                         'startSample': startSample,
                         'endSample': endSample,
                         'ratio': ratio,
-                        'encodedPCList', encodedPCList
+                        'encodedPCList': encodedPCList
                     },
                     'type': inputDescription,
                     'batch_size': paramsTrain['batch_size']
