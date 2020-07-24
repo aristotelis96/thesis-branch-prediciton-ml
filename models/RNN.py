@@ -113,6 +113,7 @@ input_bench = ["600.perlbench_s-1273B.champsimtrace.xz._.dataset_unique.txt.gz"]
 startSample, endSample = 100, 250000
 ratio = 0.6
 encodePCList=True
+loadPt=True
 inputDescription = 'sequence of 200 hundred history tuples. Each tuple (program counter 8 LSB, Taken/Not taken)'
 
 
@@ -143,7 +144,12 @@ if ContinueFromCheckpoint:
 
 print("Loading TrainDataset")
 print("Loading ValidationDataset")
-train, valid = read.readFileList(input_bench, startSample,endSample, ratio=ratio)
+
+if(loadPt):
+    train, valid = torch.load("../Datasets/trainTrainingSet.pt"), torch.load("./../Datasets/trainValidationSet.pt")
+else:
+    train, valid = read.readFileList(input_bench, startSample,endSample, ratio=ratio)
+
 
 training_set, validation_set = BranchDataset(train, encodePCList=encodePCList), BranchDataset(valid, encodePCList=encodePCList)
 
@@ -227,9 +233,9 @@ while epoch < epochEnd:
                     'samples': {
                         'startSample': startSample,
                         'endSample': endSample,
-                        'ratio': ratio,
-                        'encodePCList': encodePCList
+                        'ratio': ratio                       
                     },
+                    'encodePCList': encodePCList,
                     'type': inputDescription,
                     'batch_size': paramsTrain['batch_size']
                 },
