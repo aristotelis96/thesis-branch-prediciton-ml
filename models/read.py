@@ -93,7 +93,7 @@ def readTrainValid(file, start=0, end=100000, ratio=0.6):
     valid = read(file, start+middle+1, end)
     return train, valid
 
-def readFileList(fileList, start=0, end=100000, ratio=0.9):
+def readFileList(fileList, start=0, end=100000, ratio=0.6):
     train = torch.zeros((1,201,2), dtype=torch.float64)
     valid = torch.zeros((1,201,2), dtype=torch.float64)
     for file in fileList:
