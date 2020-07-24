@@ -107,7 +107,7 @@ def main():
     # Benchmark
     input_bench = ["600.perlbench_s-210B.champsimtrace.xz._.dataset_unique.txt.gz"]
     startSample, endSample = 100, 400000
-
+    encodePCList = True
 
 
     try:
@@ -117,12 +117,13 @@ def main():
         print("FAILED TO LOAD FROM CHECKPOINT, CHECK FILE")
         exit()
 
-
+    if ('encodePCList' in checkpoint['input_Data']):
+        encodePCList = checkpoint['input_Data']['encodePCList']    
 
     print("Loading ValidationDataset")
     _, valid = read.readFileList(input_bench, startSample,endSample, ratio=0.0)
 
-    validation_set = BranchDataset(valid)
+    validation_set = BranchDataset(valid, encodePCList=encodePCList)
 
     print("len of validation set:", len(validation_set))
 
