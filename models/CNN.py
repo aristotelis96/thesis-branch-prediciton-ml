@@ -76,10 +76,10 @@ print(model)
 # Parameters
 paramsTrain = {'batch_size': 64,
           'shuffle': True,
-          'num_workers': 4}
-paramsValid = {'batch_size': 10000,
+          'num_workers': 6}
+paramsValid = {'batch_size': 5000,
           'shuffle': False,
-          'num_workers': 4}
+          'num_workers': 6}
 
 # Benchmark
 input_bench = ["600.perlbench_s-1273B.champsimtrace.xz._.dataset_unique.txt.gz"]

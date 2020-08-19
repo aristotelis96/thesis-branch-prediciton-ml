@@ -101,3 +101,26 @@ def readFileList(fileList, start=0, end=100000, ratio=0.6):
         train = torch.cat((train, tempTrain))
         valid = torch.cat((valid, tempValid))
     return train, valid
+
+def DatasetLength(file):
+    with gzip.open(DatasetDir + file, 'rt') as fp:  
+        general =0        
+        try:
+            for line in fp:
+                if "--- H2P ---" not in line:
+                    general += 1
+                    continue
+                break
+            history=0
+            sample = 0
+            for line in fp:    
+                general+=1
+                if line.startswith("Finished"):
+                    break          
+                if "--- H2P ---" in line or "\n"==line or line.startswith("Warmup complete"):
+                    sample+=1
+                    history=0
+                    continue
+            print(sample)
+        except Exception as e:
+            print("ERROR" ,e, general)
