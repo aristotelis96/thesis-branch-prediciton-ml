@@ -33,8 +33,8 @@ class TwoLayerFullPrecisionBPCNN(nn.Module):
         self.E = torch.eye(tableSize, dtype=torch.float32)
         
         #convolution layer, 1D in effect; Linear Layer
-        self.c1 = nn.Conv2d(16, numFilters, (1,1))
-        self.tahn = nn.Tahn()
+        self.c1 = nn.Conv2d(1, numFilters, (1,1))
+        self.tahn = nn.Tanh()
         self.l2 = nn.Linear(historyLen*numFilters, 1)
         self.sigmoid = nn.Sigmoid()
 
@@ -42,9 +42,14 @@ class TwoLayerFullPrecisionBPCNN(nn.Module):
         #Embed by expanding sequence of ((IP << 7) + dir ) & (255)
         # integers into 1-hot history matrix during training
         
-        xFull = self.E[seq.data]
+        xFull = self.E[seq.data.type(torch.long)]
+        print(xFull.shape)
+        xFull = xFull.permute(0,2,1,3).to(device)
+        print(xFull.shape)
         h1 = self.c1(xFull)
+        print(h1.shape)
         h1a = self.tahn(h1)
+        print(h1a.shape)
         h2 = self.l2(h1a)
         out = self.sigmoid(h2)
         return out
@@ -82,18 +87,14 @@ paramsValid = {'batch_size': 5000,
           'num_workers': 6}
 
 # Benchmark
-input_bench = ["600.perlbench_s-1273B.champsimtrace.xz._.dataset_unique.txt.gz"]
-startSample, endSample = 100, 100000
-inputDescription = '1-hot sequence-200 only Taken/NotTaken, no program counter'
+input_bench = ["620.omnetpp_s-141B.champsimtrace.xz._.dataset_unique.txt.gz"]
+startSample, endSample = 100, 500
+ratio = 0.75
+encodePCList=True
+loadPt=False
+inputDescription = 'sequence of 200 hundred history tuples. Each tuple (program counter 8 LSB, Taken/Not taken)'
 
-print("Loading TrainDataset")
-print("Loading ValidationDataset")
-train, valid = read.readFileList(input_bench, startSample,endSample)
 
-training_set, validation_set = BranchDataset(train), BranchDataset(valid)
-
-train_loader = DataLoader(training_set, **paramsTrain)
-valid_loader = DataLoader(validation_set, **paramsValid)
 
 ##
 ## Optimize 
@@ -119,6 +120,21 @@ if ContinueFromCheckpoint:
     except:
         print("FAILED TO LOAD FROM CHECKPOINT, CHECK FILE")
         print("STARTING TRAINING WITHOUT LOADING FROM CHECKPOINT FROM EPOCH 0")        
+
+
+print("Loading TrainDataset")
+print("Loading ValidationDataset")
+if(loadPt):
+    train, valid = torch.load("../Datasets/train_600_210B_600K.pt"), torch.load("./../Datasets/valid_600_210B_200K.pt")
+else:
+    train, valid = read.readFileList(input_bench, startSample,endSample, ratio=ratio)
+    #torch.save(train, "train_600_210B_600K")
+    #torch.save(valid, "valid_600_210B_200K")
+
+training_set, validation_set = BranchDataset(train, encodePCList=encodePCList), BranchDataset(valid, encodePCList=encodePCList)
+
+train_loader = DataLoader(training_set, **paramsTrain)
+valid_loader = DataLoader(validation_set, **paramsValid)
 
 
 #TRAINING
