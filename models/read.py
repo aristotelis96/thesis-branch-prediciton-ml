@@ -22,7 +22,7 @@ class BranchDataset(Dataset):
     def __getitem__(self, idx):    
         if(self.encodePCList):
             sample = self.data[idx][1:].clone().detach()
-            encodedPCArray = torch.zeros((200,1), dtype=torch.int64)
+            encodedPCArray = torch.zeros((200), dtype=torch.int64)
             for i,s in enumerate(sample):
                 pc = int(s[0])
                 # Take 7 LSB and shift 1 possition
@@ -30,8 +30,10 @@ class BranchDataset(Dataset):
                 # Add taken or not taken
                 encodedPC += int(self.data[idx][i+1][1])
                 encodedPCArray[i] = encodedPC
+                #encodedPCArray[i][1] = s[1] #taken/nottaken
+                #encodedPCArray[i][1] = self.data[idx][i+1][1]
                 #s = encodedPCArray[i].clone().detach()
-                s[0] = encodedPC
+                #s[0] = encodedPC
                 sample = encodedPCArray.clone().detach()
 
 

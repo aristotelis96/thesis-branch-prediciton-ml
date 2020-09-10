@@ -35,16 +35,19 @@ class RNNLayer(nn.Module):
         self.batch_first = batch_first
         self.rnn_layer = rnn_layer
         
-        self.E = torch.eye(256, dtype=torch.float32)
+        self.E = torch.eye(self.input_dim, dtype=torch.float32)        
 
         if rnn_layer == 'lstm':
             self.rnn = nn.LSTM(input_size= self.input_dim, hidden_size=self.out_dim,\
                           num_layers= self.num_layers, batch_first=self.batch_first)
+            self.fc = nn.Linear(out_dim, 2)
         elif rnn_layer == 'gru':
             self.rnn = nn.GRU(input_size= self.input_dim, hidden_size=self.out_dim,\
                           num_layers= self.num_layers, batch_first=self.batch_first)
         elif rnn_layer =='transformer':
-            self.rnn = nn.TransformerEncoderLayer(d_model=self.input_dim, nhead=7)
+            #self.inpLinear = nn.Linear(2, self.input_dim)
+            self.rnn = nn.TransformerEncoderLayer(d_model=self.input_dim, nhead=self.out_dim)
+            self.fc = nn.Linear(input_dim*200, 2) # nn.Linear(out_dim*200, 2)
         else:
             raise NotImplementedError(rnn_layer)
         
@@ -53,8 +56,7 @@ class RNNLayer(nn.Module):
 
         if (normalization):
             self.normalization = nn.BatchNorm1d(out_dim)
-
-        self.fc = nn.Linear(out_dim, 2) # nn.Linear(out_dim*200, 2)
+        
         
         self.softmax = nn.Softmax(dim=-1)
         
@@ -62,19 +64,24 @@ class RNNLayer(nn.Module):
         bsize = seq.size(0)        
         
         data = self.E[seq.data.type(torch.long)]
-        data = data.to(torch.device("cuda:0"))
-        
+        seq = data.to(torch.device("cuda:0"))
+
         if self.rnn_layer == 'transformer':
-            self.rnn_out = self.rnn(seq)
+            #seq = self.inpLinear(seq)
+            self.rnn_out = self.rnn(seq)                   
+            #self.rnn_out = self.rnn_out[:,-1,:]  
+            self.rnn_out = self.rnn_out.reshape(len(self.rnn_out), 200*self.input_dim)
         elif self.rnn_layer =='lstm':
-            self.rnn_out, (self.h, self.c) = self.rnn(data)             
+            self.rnn_out, (self.h, self.c) = self.rnn(seq) 
+            self.rnn_out = self.h[-1]            
         elif self.rnn_layer == 'gru': 
             self.rnn_out, self.h = self.rnn(seq)
-        
+
         if normalization:
-            self.rnn_out = self.normalization(self.h[-1])
-            
+            self.rnn_out = self.normalization(self.rnn_out)
+        
         out = self.fc(self.rnn_out)   
+
         ## out = self.fc(self.rnn_out.view(bsize,-1))        
         return self.softmax(out)
 
@@ -85,19 +92,19 @@ device = torch.device("cuda:"+str(device_idx) if torch.cuda.is_available() else 
 ## Parameters ##
 n_class = 256
 num_layers = 1
-normalization = True
-input_dim = 256
-rnn_layer = 'lstm'
+normalization = False
+input_dim = 512
+rnn_layer = 'transformer'
 
 # learning Rate
-learning_rate = 1e-4
+learning_rate = 3e-4
 
 # Load a checkpoint?
 ContinueFromCheckpoint = False
 
 # Epoch
 epochStart = 0
-epochEnd = 50
+epochEnd = 100
 
 ## Model 
 model = RNNLayer(rnn_layer=rnn_layer, input_dim=input_dim, out_dim=n_class, num_layers=num_layers, normalization=normalization).to(device)
@@ -107,10 +114,10 @@ print(model)
 # Parameters
 paramsTrain = {'batch_size': 64,
           'shuffle': True,
-          'num_workers': 3}
-paramsValid = {'batch_size': 5000,
+          'num_workers': 2}
+paramsValid = {'batch_size': 64,
           'shuffle': False,
-          'num_workers': 3}
+          'num_workers': 2}
 
 # Benchmark
 input_bench = ["600.perlbench_s-210B.champsimtrace.xz._.dataset_unique.txt.gz"]
@@ -118,7 +125,7 @@ startSample, endSample = 100, 400
 ratio = 0.75
 encodePCList=True
 loadPt=True
-inputDescription = 'sequence of 200 1-hot columns. columns contain 1 at the position of the encoded PC & Taken/NotTaken path, or 0 otherwise'
+inputDescription = 'sequence of 200 tuples (encodedPC *8bits*, Taken/NotTaken)'
 
 
 ##
@@ -150,7 +157,7 @@ print("Loading TrainDataset")
 print("Loading ValidationDataset")
 
 if(loadPt):
-    train, valid = torch.load("../Datasets/train_600_210B_600K.pt"), torch.load("./../Datasets/valid_600_210B_600K-800K.pt")
+    train, valid = torch.load("./oversampled.pt"), torch.load("./../Datasets/valid_600_210B_600K-800K.pt")
 else:
     train, valid = read.readFileList(input_bench, startSample,endSample, ratio=ratio)
     #torch.save(train, "train_600_210B_600K.pt")
@@ -270,4 +277,5 @@ end = time.time()
 print("total time taken to train: ", end-now)
 
 print("Finish")
+
 

@@ -9,21 +9,6 @@ import read
 from read import BranchDataset
 import os
 
-def init_lstm(lstm, lstm_hidden_size, forget_bias=2):
-    for name,weights in lstm.named_parameters():
-        if "bias_hh" in name:
-            #weights are initialized 
-            #(b_hi|b_hf|b_hg|b_ho), 
-            weights[lstm_hidden_size:lstm_hidden_size*2].data.fill_(forget_bias)
-        elif 'bias_ih' in name:
-            #(b_ii|b_if|b_ig|b_io)
-            pass
-        elif "weight_hh" in name:
-            torch.nn.init.orthogonal_(weights)
-        elif 'weight_ih' in name:
-            torch.nn.init.xavier_normal_(weights)
-    return lstm
-
 
 class TwoLayerFullPrecisionBPCNN(nn.Module):
     def __init__(self, tableSize=256, numFilters=2, historyLen=200):
@@ -33,26 +18,25 @@ class TwoLayerFullPrecisionBPCNN(nn.Module):
         self.E = torch.eye(tableSize, dtype=torch.float32)
         
         #convolution layer, 1D in effect; Linear Layer
-        self.c1 = nn.Conv2d(1, numFilters, (1,1))
+        self.c1 = nn.Conv2d(16, numFilters, (1,1))        
         self.tahn = nn.Tanh()
-        self.l2 = nn.Linear(historyLen*numFilters, 1)
-        self.sigmoid = nn.Sigmoid()
+        self.l2 = nn.Linear(historyLen*numFilters*16, 2)
+        #self.l3 = nn.Linear(historyLen*numFilters, 2)
+        self.sigmoid2 = nn.Sigmoid()
+        self.softmax = nn.Softmax(dim=-1)
 
     def forward(self, seq):
         #Embed by expanding sequence of ((IP << 7) + dir ) & (255)
         # integers into 1-hot history matrix during training
         
         xFull = self.E[seq.data.type(torch.long)]
-        print(xFull.shape)
-        xFull = xFull.permute(0,2,1,3).to(device)
-        print(xFull.shape)
+        xFull = xFull.reshape(len(xFull), 16,16,200).to(device)        
         h1 = self.c1(xFull)
-        print(h1.shape)
         h1a = self.tahn(h1)
-        print(h1a.shape)
-        h2 = self.l2(h1a)
-        out = self.sigmoid(h2)
-        return out
+        h1a = h1a.reshape(len(h1a),historyLen*numFilters*16)
+        out = self.l2(h1a)        
+        out = self.sigmoid2(out)
+        return self.softmax(out)
 
 ## GPU/CPU ##
 device_idx = 0
@@ -64,14 +48,14 @@ numFilters = 2
 historyLen = 200
 
 # learning Rate
-learning_rate = 1e-3
+learning_rate = 1e-4
 
 # Load a checkpoint?
 ContinueFromCheckpoint = False
 
 # Epoch
 epochStart = 0
-epochEnd = 50
+epochEnd = 200
 
 ## Model 
 model = TwoLayerFullPrecisionBPCNN(tableSize=tableSize, numFilters=numFilters, historyLen=historyLen).to(device)
@@ -79,20 +63,20 @@ model = TwoLayerFullPrecisionBPCNN(tableSize=tableSize, numFilters=numFilters, h
 print(model)
 ## TRAIN/TEST DATALOADER
 # Parameters
-paramsTrain = {'batch_size': 64,
+paramsTrain = {'batch_size': 32,
           'shuffle': True,
-          'num_workers': 6}
+          'num_workers': 2}
 paramsValid = {'batch_size': 5000,
           'shuffle': False,
-          'num_workers': 6}
+          'num_workers': 2}
 
 # Benchmark
-input_bench = ["620.omnetpp_s-141B.champsimtrace.xz._.dataset_unique.txt.gz"]
-startSample, endSample = 100, 500
+input_bench = ["600.perlbench_s-210B.champsimtrace.xz._.dataset_unique.txt.gz"]
+startSample, endSample = 100, 400
 ratio = 0.75
 encodePCList=True
-loadPt=False
-inputDescription = 'sequence of 200 hundred history tuples. Each tuple (program counter 8 LSB, Taken/Not taken)'
+loadPt=True
+inputDescription = '1hot matrix, 256*200. 1 at the position of the encoded PC with Taken/NotTaken or 0 otherwise'
 
 
 
@@ -125,7 +109,7 @@ if ContinueFromCheckpoint:
 print("Loading TrainDataset")
 print("Loading ValidationDataset")
 if(loadPt):
-    train, valid = torch.load("../Datasets/train_600_210B_600K.pt"), torch.load("./../Datasets/valid_600_210B_200K.pt")
+    train, valid = torch.load("./oversampled.pt"), torch.load("./../Datasets/valid_600_210B_600K-800K.pt")
 else:
     train, valid = read.readFileList(input_bench, startSample,endSample, ratio=ratio)
     #torch.save(train, "train_600_210B_600K")
@@ -200,14 +184,7 @@ while epoch < epochEnd:
         torch.save({
                 'epoch': epoch,
 				'learning_rate': learning_rate,
-                'model_architecture': str(model),
-                'model_specifics': {
-                    'n_class' : n_class,
-                    'num_layers' : num_layers,
-                    'normalization' : normalization,
-                    'input_dim' : input_dim,
-                    'rnn_layer' : rnn_layer
-                },
+                'model_architecture': str(model),                
                 'input_Data': {
                     'input_bench': input_bench,
                     'type': inputDescription,
@@ -238,3 +215,4 @@ end = time.time()
 print("total time taken to train: ", end-now)
 
 print("Finish")
+
