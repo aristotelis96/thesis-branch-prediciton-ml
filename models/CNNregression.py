@@ -5,8 +5,8 @@ from torch.autograd import Variable
 import sys
 from torch.utils.data import DataLoader
 import time
-import read
-from read import BranchDataset
+import readRegression
+from readRegression import BranchDataset
 import os
 
 
@@ -18,12 +18,10 @@ class TwoLayerFullPrecisionBPCNN(nn.Module):
         self.E = torch.eye(tableSize, dtype=torch.float32)
         
         #convolution layer, 1D in effect; Linear Layer
-        self.c1 = nn.Conv2d(256, numFilters, (1,1))        
+        self.c1 = nn.Conv2d(tableSize, numFilters, (1,1))        
         self.tahn = nn.Tanh()
-        self.l2 = nn.Linear(historyLen*numFilters, 2)
-        #self.l3 = nn.Linear(historyLen*numFilters, 2)
-        self.sigmoid2 = nn.Sigmoid()
-        self.softmax = nn.Softmax(dim=-1)
+        self.l2 = nn.Linear(historyLen*numFilters, 1)        
+        self.sigmoid2 = nn.Sigmoid()        
 
     def forward(self, seq):
         #Embed by expanding sequence of ((IP << 7) + dir ) & (255)
@@ -32,12 +30,13 @@ class TwoLayerFullPrecisionBPCNN(nn.Module):
         xFull = self.E[seq.data.type(torch.long)]
         xFull = torch.unsqueeze(xFull, 1)        
         xFull = xFull.permute(0,3,1,2).to(device)
+        
         h1 = self.c1(xFull)
         h1a = self.tahn(h1)
         h1a = h1a.reshape(len(h1a),historyLen*numFilters)
         out = self.l2(h1a)        
         out = self.sigmoid2(out)
-        return self.softmax(out)
+        return out
 
 ## GPU/CPU ##
 device_idx = 0
@@ -49,7 +48,7 @@ numFilters = 2
 historyLen = 200
 
 # learning Rate
-learning_rate = 1e-4
+learning_rate = 1e-3
 
 # Load a checkpoint?
 ContinueFromCheckpoint = False
@@ -64,7 +63,7 @@ model = TwoLayerFullPrecisionBPCNN(tableSize=tableSize, numFilters=numFilters, h
 print(model)
 ## TRAIN/TEST DATALOADER
 # Parameters
-paramsTrain = {'batch_size': 32,
+paramsTrain = {'batch_size': 64,
           'shuffle': True,
           'num_workers': 2}
 paramsValid = {'batch_size': 5000,
@@ -83,7 +82,7 @@ inputDescription = '1hot matrix, 256*200. 1 at the position of the encoded PC wi
 
 ##
 ## Optimize 
-criterion = nn.CrossEntropyLoss()
+criterion = nn.SmoothL1Loss()
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=learning_rate/10)
 
 total_Train_loss = []
@@ -110,10 +109,12 @@ if ContinueFromCheckpoint:
 print("Loading TrainDataset")
 print("Loading ValidationDataset")
 if(loadPt):
-    train, valid = torch.load("./600_210B_5000.pt"), torch.load("./../Datasets/valid_600_210B_600K-800K.pt")
-    valid =  torch.chunk(valid, 10, dim=0)[0]
+    #train, valid = torch.load("./../Datasets/train_600_210B_600K.pt"), torch.load("./../Datasets/valid_600_210B_600K-800K.pt")    
+    train = torch.load("./600_210B_5000.pt")
+    valid = torch.load("./../Datasets/valid_600_210B_600K-800K.pt")  
+    valid =  torch.chunk(valid, 100, dim=0)[0]
 else:
-    train, valid = read.readFileList(input_bench, startSample,endSample, ratio=ratio)
+    train, valid = readRegression.readFileList(input_bench, startSample,endSample, ratio=ratio)
     #torch.save(train, "train_600_210B_600K")
     #torch.save(valid, "valid_600_210B_200K")
 
@@ -142,7 +143,7 @@ while epoch < epochEnd:
             optimizer.zero_grad()
             outputs = model(X.float())
 
-            loss = criterion(outputs, labels.long()) 
+            loss = criterion(outputs, labels.float()) 
 
             
 
@@ -151,7 +152,7 @@ while epoch < epochEnd:
             optimizer.step()
             # print statistics
             running_loss += loss.item()
-            correct += float((outputs.argmax(axis=1).cpu() == labels.cpu()).sum())
+            correct += float((torch.round(outputs.cpu()) == labels.cpu()).sum())
         train_acc = correct/float(len(training_set))
         train_loss = running_loss/float(len(train_loader))
         total_Train_accuracy.append(train_acc)
@@ -172,7 +173,7 @@ while epoch < epochEnd:
 
             loss_values.append(loss.item())    
         
-            correct += (outputs.argmax(axis=1).cpu() == Validlabels.cpu()).sum()
+            correct += (torch.round(outputs.cpu()) == Validlabels.cpu()).sum()
         epochLoss = float(sum(loss_values))/float(len(valid_loader))
         total_Validation_loss.append(epochLoss)
 
