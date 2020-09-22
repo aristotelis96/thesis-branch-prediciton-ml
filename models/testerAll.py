@@ -27,86 +27,53 @@ def init_lstm(lstm, lstm_hidden_size, forget_bias=2):
     return lstm
 
 
-class RNNLayer(nn.Module):
-    def __init__(self,  input_dim, out_dim, num_layers, init_weights = True, batch_first=True, rnn_layer = 'gru', normalization = False):
+class TwoLayerFullPrecisionBPCNN(nn.Module):
+    def __init__(self, tableSize=256, numFilters=2, historyLen=200):
         super().__init__()
-      
-        self.input_dim = input_dim
-        self.out_dim = out_dim
-        self.num_layers = num_layers
-        self.batch_first = batch_first
-        self.rnn_layer = rnn_layer
+        self.historyLen= historyLen
+        self.numFilters = numFilters
+        #embed via identity matrix:
+        self.E = torch.eye(tableSize, dtype=torch.float32)
         
-        self.E = torch.eye(256, dtype=torch.float32)        
+        #convolution layer, 1D in effect; Linear Layer
+        self.c1 = nn.Conv2d(tableSize, numFilters, (1,1))        
+        self.tahn = nn.Tanh()
+        self.l2 = nn.Linear(historyLen*numFilters, 1)        
+        self.sigmoid2 = nn.Sigmoid()        
 
-        if rnn_layer == 'lstm':
-            self.rnn = nn.LSTM(input_size= self.input_dim, hidden_size=self.out_dim,\
-                          num_layers= self.num_layers, batch_first=self.batch_first)
-            self.fc = nn.Linear(out_dim, 2) # nn.Linear(out_dim*200, 2) 
-        elif rnn_layer == 'gru':
-            self.rnn = nn.GRU(input_size= self.input_dim, hidden_size=self.out_dim,\
-                          num_layers= self.num_layers, batch_first=self.batch_first)
-        elif rnn_layer =='transformer':
-            self.rnn = nn.TransformerEncoderLayer(d_model=self.input_dim, nhead=self.out_dim)
-            self.fc = nn.Linear(input_dim*200, 2) # nn.Linear(out_dim*200, 2)
-        else:
-            raise NotImplementedError(rnn_layer)
-        
-        if init_weights:
-            self.rnn = init_lstm(self.rnn, self.out_dim)
-
-        if (normalization):
-            self.normalization = nn.BatchNorm1d(out_dim)
-        else:
-            self.normalization = None
-
-        
-        self.softmax = nn.Softmax(dim=-1)
-        
     def forward(self, seq):
-        bsize = seq.size(0)        
-
-        #data = self.E[seq.data.type(torch.long)]
-        #seq = data.to(torch.device("cuda:0"))
-
-        if self.rnn_layer == 'transformer':
-            #seq = self.inpLinear(seq)
-            self.rnn_out = self.rnn(seq)                   
-            #self.rnn_out = self.rnn_out[:,-1,:]  
-            self.rnn_out = self.rnn_out.reshape(len(self.rnn_out), 200*256)
-        elif self.rnn_layer =='lstm':
-            self.rnn_out, (self.h, self.c) = self.rnn(seq) 
-            self.rnn_out = self.h[-1]                        
-        elif self.rnn_layer == 'gru': 
-            self.rnn_out, self.h = self.rnn(seq)
-
-        if self.normalization:
-            self.rnn_out = self.normalization(self.rnn_out)
+        #Embed by expanding sequence of ((IP << 7) + dir ) & (255)
+        # integers into 1-hot history matrix during training
         
-        out = self.fc(self.rnn_out)   
-        ## out = self.fc(self.rnn_out.view(bsize,-1))        
-        return self.softmax(out)
+        xFull = self.E[seq.data.type(torch.long)]
+        xFull = torch.unsqueeze(xFull, 1)        
+        xFull = xFull.permute(0,3,1,2).to(device)
+        
+        h1 = self.c1(xFull)
+        h1a = self.tahn(h1)
+        h1a = h1a.reshape(len(h1a),self.historyLen*self.numFilters)
+        out = self.l2(h1a)        
+        out = self.sigmoid2(out)
+        return out
+device = torch.device("cpu")
 model = None
+allBranch = {}
+
 def main():
     ## GPU/CPU ##
-    device_idx = 0
-    device = torch.device("cuda:"+str(device_idx) if torch.cuda.is_available() else "cpu")
     device = torch.device("cpu")
     ## Parameters ##
-    n_class = 128
-    num_layers = 1
-    normalization = True
-    input_dim = 1
-    rnn_layer = 'lstm'
+    tableSize = 256
+    numFilters = 2
+    historyLen = 200
 
     # Name of pt model
-    modelFolder = "./pt/lstm/encodedPC/dekadikosArithmos/"
-    modelName = "lstm128_lr1e-4_encodedPC_210B.pt"
+    modelFolder = "./"
+    modelName = "checkpointCNN.pt"
 
     modelName = modelFolder + modelName
     ## Model 
-    model = RNNLayer(rnn_layer=rnn_layer, input_dim=input_dim, out_dim=n_class, num_layers=num_layers, normalization=normalization).to(device)
-    criterion = nn.CrossEntropyLoss()
+    model = TwoLayerFullPrecisionBPCNN(tableSize=tableSize, numFilters=numFilters, historyLen=historyLen).to(device)
 
     print(model)
     ## TEST DATALOADER
@@ -115,11 +82,7 @@ def main():
             'shuffle': False,
             'num_workers': 4}
 
-    # Benchmark
-    input_bench = ["600.perlbench_s-1273B.champsimtrace.xz._.dataset_unique.txt.gz"]
-    startSample, endSample = 100, 600000
-    encodePCList = True
-    loadPt = True
+   
 
     try:
         print(modelName)
@@ -136,17 +99,18 @@ def main():
     total=0
     now = time.time()
 
+
     with gzip.open("../Datasets/600.perlbench_s-210B.champsimtrace.xz._.dataset_all.txt.gz", 'rt') as fp:      
         model.eval()
         try:        
             line=""
+            if "--- H2P ---" not in line:
+                for line in fp:
+                    if "--- H2P ---" in line:
+                        break            
             while True:
-                sample = torch.zeros((1,200,1), dtype=torch.float64)
-                if "--- H2P ---" not in line:
-                    for line in fp:
-                        if "--- H2P ---" in line:
-                            break            
-                label = np.float64(fp.readline().split(" ")[1])
+                sample = torch.zeros((1,200), dtype=torch.float64)                
+                [ipH2P, label] = np.float64(fp.readline().split(" "))
                 history=0            
                 for line in fp:
                     if "--- H2P ---" in line or "\n"==line or line.startswith("Warmup complete"):                    
@@ -155,18 +119,27 @@ def main():
                     pc = int(ip)
                     encodedPC = (pc & 0b1111111) << 1
                     encodedPC += int(taken)
-                    sample[0][history][0] = encodedPC
+                    sample[0][history] = encodedPC
                     history+=1            
-                if(model(sample.float()).argmax(axis=1)==label):
+                ipH2P = int(ipH2P)
+                if ipH2P not in allBranch:
+                    allBranch[ipH2P] = {'total': 1, 'correct' : 0, 'acc': 0}
+                else:
+                    allBranch[ipH2P]['total']+=1
+                if(torch.round(model(sample.float()))==label):
                     correct+=1
+                    allBranch[ipH2P]['correct']+=1
+                    allBranch[ipH2P]['acc'] = allBranch[ipH2P]['correct']/allBranch[ipH2P]['total']
                 total+=1
-                if(total==1000000):
+                if(total%5000==0):
+                    print(correct,total, 100*correct/total)
+                    print(allBranch)
                     break
             print(correct,total, 100*correct/total)
         except Exception as e:
             print("ERROR" ,e)
+            print(correct,total, 100*correct/total)
     end = time.time()
-    print("total time taken to train: ", end-now)        
-main()
+    print("total time taken to check: ", end-now)        
 if __name__ == '__main__':
-    main
+    main()
