@@ -145,11 +145,9 @@ def main():
     valid_loader = DataLoader(validation_set, **paramsValid)
     print("-------")
     #print("Epoch : " + str(epoch))
-    loss_values = []
-    running_loss = 0.0
-    correct = 0.0
-    values = []
-    for X_val, Validlabels in valid_loader:
+    loss_values = []    
+    correct = 0.0    
+    for X_val, Validlabels in valid_loader:        
         model.eval() 
 
         X_val = X_val.to(device)
@@ -159,8 +157,7 @@ def main():
 
         loss = criterion(outputs, Validlabels.long())
 
-        loss_values.append(loss.item())    
-        values.push(outputs)
+        loss_values.append(loss.item())            
         correct += (outputs.argmax(axis=1).cpu() == Validlabels.cpu()).sum()
     epochLoss = float(sum(loss_values))/float(len(valid_loader))
     epochAccuracy = float(correct)/float(len(validation_set))
