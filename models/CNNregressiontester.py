@@ -29,13 +29,14 @@ class TwoLayerFullPrecisionBPCNN(nn.Module):
         #Embed by expanding sequence of ((IP << 7) + dir ) & (255)
         # integers into 1-hot history matrix during training
         
-        xFull = self.E[seq.data.type(torch.long)]
+        #xFull = self.E[seq.data.type(torch.long)]
+        xFull = self.E[seq.data.long()]
         xFull = torch.unsqueeze(xFull, 1)        
         xFull = xFull.permute(0,3,1,2).to(device)
         
         h1 = self.c1(xFull)
         h1a = self.tahn(h1)
-        h1a = h1a.reshape(len(h1a),historyLen*numFilters)
+        h1a = h1a.reshape(h1a.size(0),h1a.size(1)*h1a.size(3))
         out = self.l2(h1a)        
         out = self.sigmoid2(out)
         return out
@@ -86,6 +87,8 @@ criterion = nn.L1Loss()
 print("Loading ValidationDataset")
 if(loadPt):
     valid = torch.load("../Datasets/train_600_210B_600K.pt")
+    v = torch.load("../Datasets/valid_600_210B_600K-800K.pt")
+    valid = torch.cat((valid,v),dim=0)
 else:
     _, valid = read.readFileList(input_bench, startSample,endSample, ratio=0.0)
     #torch.save(valid, '600.perlbench_1273B_valid600K.pt')
@@ -100,7 +103,6 @@ print("-------")
 loss_values = []
 running_loss = 0.0
 correct = 0.0
-values = []
 
 for X_val, Validlabels in valid_loader:
     model.eval() 

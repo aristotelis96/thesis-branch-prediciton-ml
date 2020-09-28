@@ -10,6 +10,7 @@ from read import BranchDataset
 import os
 import numpy as np
 import gzip
+import pprint
 
 def init_lstm(lstm, lstm_hidden_size, forget_bias=2):
     for name,weights in lstm.named_parameters():
@@ -48,6 +49,7 @@ class TwoLayerFullPrecisionBPCNN(nn.Module):
         xFull = self.E[seq.data.type(torch.long)]
         xFull = torch.unsqueeze(xFull, 1)        
         xFull = xFull.permute(0,3,1,2).to(device)
+       # xFull = xFull.reshape(len(xFull), 32,8,200).to(device)
         
         h1 = self.c1(xFull)
         h1a = self.tahn(h1)
@@ -99,8 +101,9 @@ def main():
     total=0
     now = time.time()
 
-
-    with gzip.open("../Datasets/600.perlbench_s-210B.champsimtrace.xz._.dataset_all.txt.gz", 'rt') as fp:      
+    bench = "../Datasets/600.perlbench_s-210B.champsimtrace.xz._.dataset_unique.txt.gz"
+    print(bench)
+    with gzip.open(bench, 'rt') as fp:      
         model.eval()
         try:        
             line=""
@@ -109,11 +112,14 @@ def main():
                     if "--- H2P ---" in line:
                         break            
             while True:
-                sample = torch.zeros((1,200), dtype=torch.float64)                
-                [ipH2P, label] = np.float64(fp.readline().split(" "))
+                sample = torch.zeros((1,200), dtype=torch.float64)    
+                line = fp.readline()            
+                if "--- H2P ---" in line or "\n"==line or line.startswith("Warmup"):                    
+                    continue
+                [ipH2P, label] = np.float64(line.split(" "))
                 history=0            
                 for line in fp:
-                    if "--- H2P ---" in line or "\n"==line or line.startswith("Warmup complete"):                    
+                    if "--- H2P ---" in line or "\n"==line or line.startswith("Warmup"):                    
                         break
                     [ip, taken] = line.split(" ")
                     pc = int(ip)
@@ -131,14 +137,15 @@ def main():
                     allBranch[ipH2P]['correct']+=1
                     allBranch[ipH2P]['acc'] = allBranch[ipH2P]['correct']/allBranch[ipH2P]['total']
                 total+=1
-                if(total%5000==0):
+                if(total%500000==0):
                     print(correct,total, 100*correct/total)
-                    print(allBranch)
-                    break
+                    p = pprint.PrettyPrinter()
+                    p.pprint(allBranch)
             print(correct,total, 100*correct/total)
         except Exception as e:
             print("ERROR" ,e)
             print(correct,total, 100*correct/total)
+            p.pprint(allBranch)
     end = time.time()
     print("total time taken to check: ", end-now)        
 if __name__ == '__main__':

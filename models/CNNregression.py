@@ -27,13 +27,15 @@ class TwoLayerFullPrecisionBPCNN(nn.Module):
         #Embed by expanding sequence of ((IP << 7) + dir ) & (255)
         # integers into 1-hot history matrix during training
         
-        xFull = self.E[seq.data.type(torch.long)]
+        #xFull = self.E[seq.data.type(torch.long)]
+        xFull = self.E[seq.data.long()]
         xFull = torch.unsqueeze(xFull, 1)        
-        xFull = xFull.permute(0,3,1,2).to(device)
+        xFull = xFull.permute(0,3,1,2)#.to(device)
+        #xFull = xFull.reshape(len(xFull),32,8,200).to(device)
         
         h1 = self.c1(xFull)
-        h1a = self.tahn(h1)
-        h1a = h1a.reshape(len(h1a),historyLen*numFilters)
+        h1a = self.tahn(h1)        
+        h1a = h1a.reshape(h1a.size(0),h1a.size(1)*h1a.size(3))
         out = self.l2(h1a)        
         out = self.sigmoid2(out)
         return out
@@ -41,21 +43,20 @@ class TwoLayerFullPrecisionBPCNN(nn.Module):
 ## GPU/CPU ##
 device_idx = 0
 device = torch.device("cuda:"+str(device_idx) if torch.cuda.is_available() else "cpu")
-
 ## Parameters ##
 tableSize = 256
 numFilters = 2
 historyLen = 200
 
 # learning Rate
-learning_rate = 1e-3
+learning_rate = 1e-4
 
 # Load a checkpoint?
-ContinueFromCheckpoint = False
+ContinueFromCheckpoint = True
 
 # Epoch
 epochStart = 0
-epochEnd = 50
+epochEnd = 0
 
 ## Model 
 model = TwoLayerFullPrecisionBPCNN(tableSize=tableSize, numFilters=numFilters, historyLen=historyLen).to(device)
@@ -63,7 +64,7 @@ model = TwoLayerFullPrecisionBPCNN(tableSize=tableSize, numFilters=numFilters, h
 print(model)
 ## TRAIN/TEST DATALOADER
 # Parameters
-paramsTrain = {'batch_size': 64,
+paramsTrain = {'batch_size': 128,
           'shuffle': True,
           'num_workers': 2}
 paramsValid = {'batch_size': 5000,
@@ -71,7 +72,7 @@ paramsValid = {'batch_size': 5000,
           'num_workers': 2}
 
 # Benchmark
-input_bench = ["600.perlbench_s-210B.champsimtrace.xz._.dataset_unique.txt.gz"]
+input_bench = ["600.perlbench_s-210B.champsimtrace.xz._.dataset_random.txt.gz"]
 startSample, endSample = 100, 400
 ratio = 0.75
 encodePCList=True
@@ -82,7 +83,7 @@ inputDescription = '1hot matrix, 256*200. 1 at the position of the encoded PC wi
 
 ##
 ## Optimize 
-criterion = nn.SmoothL1Loss()
+criterion = nn.MSELoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=learning_rate/10)
 
 total_Train_loss = []
@@ -109,10 +110,11 @@ if ContinueFromCheckpoint:
 print("Loading TrainDataset")
 print("Loading ValidationDataset")
 if(loadPt):
-    #train, valid = torch.load("./../Datasets/train_600_210B_600K.pt"), torch.load("./../Datasets/valid_600_210B_600K-800K.pt")    
-    train = torch.load("./600_210B_5000.pt")
-    valid = torch.load("./../Datasets/valid_600_210B_600K-800K.pt")  
-    valid =  torch.chunk(valid, 100, dim=0)[0]
+    train, valid = torch.load("./../Datasets/train_600_210B_600K.pt"), torch.load("./../Datasets/valid_600_210B_600K-800K.pt")    
+    train = torch.load("./600_210B_random_HighOccurency.pt")
+    #valid = torch.load("./631_5000.pt")  
+    valid =  torch.chunk(valid, 20, dim=0)[0]
+    #valid = torch.load("./NewValidation.pt")
 else:
     train, valid = readRegression.readFileList(input_bench, startSample,endSample, ratio=ratio)
     #torch.save(train, "train_600_210B_600K")
