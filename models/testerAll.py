@@ -57,42 +57,46 @@ class TwoLayerFullPrecisionBPCNN(nn.Module):
         out = self.l2(h1a)        
         out = self.sigmoid2(out)
         return out
-device = torch.device("cpu")
+device = torch.device("cuda:0")
 model = None
 allBranch = {}
 
-def main():
+def main(branch):
     ## GPU/CPU ##
-    device = torch.device("cpu")
+    device = torch.device("cuda:0")
     ## Parameters ##
     tableSize = 256
     numFilters = 2
     historyLen = 200
 
     # Name of pt model
-    modelFolder = "./"
-    modelName = "checkpointCNN.pt"
+    modelFolder = "./specificBranch/models/250/"
+    models = os.listdir(modelFolder)
+    modelsDict = {}
+    for modelN in models:
+        modelName = modelN
+        modelName = modelFolder + modelName
+        ## Model 
+        model = TwoLayerFullPrecisionBPCNN(tableSize=tableSize, numFilters=numFilters, historyLen=historyLen).to(device)
 
-    modelName = modelFolder + modelName
-    ## Model 
-    model = TwoLayerFullPrecisionBPCNN(tableSize=tableSize, numFilters=numFilters, historyLen=historyLen).to(device)
+        print(model)
+        ## TEST DATALOADER
+        # Parameters
+        paramsValid = {'batch_size': 64,
+                'shuffle': False,
+                'num_workers': 4}
 
-    print(model)
-    ## TEST DATALOADER
-    # Parameters
-    paramsValid = {'batch_size': 64,
-            'shuffle': False,
-            'num_workers': 4}
+    
 
-   
-
-    try:
-        print(modelName)
-        checkpoint = torch.load(modelName)
-        model.load_state_dict(checkpoint['model_state_dict'])
-    except:
-        print("FAILED TO LOAD FROM CHECKPOINT, CHECK FILE")
-        exit()
+        try:
+            print(modelName)
+            checkpoint = torch.load(modelName)
+            model.load_state_dict(checkpoint['model_state_dict'])
+            model.eval()
+        except:
+            print("FAILED TO LOAD FROM CHECKPOINT, CHECK FILE")
+            exit()
+        modelsDict[int(modelN[3:-3])] = model
 
     if ('encodePCList' in checkpoint['input_Data']):
         encodePCList = checkpoint['input_Data']['encodePCList']    
@@ -101,10 +105,10 @@ def main():
     total=0
     now = time.time()
 
-    bench = "../Datasets/600.perlbench_s-210B.champsimtrace.xz._.dataset_unique.txt.gz"
+    bench = "../Datasets/myTraces/541.leela/541.leela_ref-865B.champsimtrace.xz._.dataset_all.txt.gz"
     print(bench)
     with gzip.open(bench, 'rt') as fp:      
-        model.eval()
+        #model.eval()
         try:        
             line=""
             if "--- H2P ---" not in line:
@@ -116,7 +120,7 @@ def main():
                 line = fp.readline()            
                 if "--- H2P ---" in line or "\n"==line or line.startswith("Warmup"):                    
                     continue
-                [ipH2P, label] = np.float64(line.split(" "))
+                [ipH2P, label] = np.float64(line.split(" "))                
                 history=0            
                 for line in fp:
                     if "--- H2P ---" in line or "\n"==line or line.startswith("Warmup"):                    
@@ -127,26 +131,30 @@ def main():
                     encodedPC += int(taken)
                     sample[0][history] = encodedPC
                     history+=1            
-                ipH2P = int(ipH2P)
+                ipH2P = int(ipH2P)                
                 if ipH2P not in allBranch:
                     allBranch[ipH2P] = {'total': 1, 'correct' : 0, 'acc': 0}
                 else:
                     allBranch[ipH2P]['total']+=1
-                if(torch.round(model(sample.float()))==label):
-                    correct+=1
-                    allBranch[ipH2P]['correct']+=1
-                    allBranch[ipH2P]['acc'] = allBranch[ipH2P]['correct']/allBranch[ipH2P]['total']
+                if(ipH2P in modelsDict):
+                    if(torch.round(modelsDict[ipH2P](sample.float()))==label):
+                        correct+=1
+                        allBranch[ipH2P]['correct']+=1
+                        allBranch[ipH2P]['acc'] = allBranch[ipH2P]['correct']/allBranch[ipH2P]['total']                
                 total+=1
                 if(total%500000==0):
                     print(correct,total, 100*correct/total)
                     p = pprint.PrettyPrinter()
                     p.pprint(allBranch)
+                    torch.save(allBranch, "testerAll_measure.pt")
             print(correct,total, 100*correct/total)
         except Exception as e:
             print("ERROR" ,e)
             print(correct,total, 100*correct/total)
             p.pprint(allBranch)
+            torch.save(allBranch, "testerAll_measure.pt")
+
     end = time.time()
     print("total time taken to check: ", end-now)        
 if __name__ == '__main__':
-    main()
+    main(sys.argv[1])
