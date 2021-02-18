@@ -2,14 +2,14 @@ import numpy as np
 import gzip
 import torch
 from torch.utils.data import Dataset
-
+import os
 
 ## GPU/CPU ##
 device_idx = 0
 device = torch.device("cuda:"+str(device_idx) if torch.cuda.is_available() else "cpu")
 
 # Dataset Folder #
-DatasetDir="C:/Users/Aristotelis/Desktop/diploma/Datasets/"
+DatasetDir="C:/Users/Aristotelis/Desktop/diploma/Datasets/myTraces/531.deepsjeng/"
 class BranchDataset(Dataset):
     def __init__(self, npy, transform=None, encodePCList=False):
         #self.data = np.load(npyFile)
@@ -96,15 +96,6 @@ def readTrainValid(file, start=0, end=100000, ratio=0.6):
     valid = read(file, start+middle+1, end)
     return train, valid
 
-def readFileList(fileList, start=0, end=100000, ratio=0.6):
-    train = torch.zeros((1,201,2), dtype=torch.float64)
-    valid = torch.zeros((1,201,2), dtype=torch.float64)
-    for file in fileList:
-        tempTrain, tempValid = readTrainValid(file, start, end, ratio)
-        train = torch.cat((train, tempTrain))
-        valid = torch.cat((valid, tempValid))
-    return train, valid
-
 def DatasetLength(file):
     with gzip.open(DatasetDir + file, 'rt') as fp:  
         general =0        
@@ -123,7 +114,20 @@ def DatasetLength(file):
                 if "--- H2P ---" in line or "\n"==line or line.startswith("Warmup complete"):
                     sample+=1
                     history=0
-                    continue
-            print(sample)
+                    continue            
         except Exception as e:
-            print("ERROR" ,e, general)
+            print("ERROR" ,e, general)    
+    return sample
+
+
+def readFileList(fileList, start=0, end=50000, ratio=0.0):
+    train = torch.zeros((1,201,2), dtype=torch.float64)
+    valid = torch.zeros((1,201,2), dtype=torch.float64)        
+    for file in fileList:
+        print(file)    
+        end = DatasetLength(file)-1
+        print(end)
+        tempTrain, tempValid = readTrainValid(file, start, end, ratio)
+        train = torch.cat((train, tempTrain))
+        valid = torch.cat((valid, tempValid))
+    return train, valid
