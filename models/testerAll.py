@@ -57,46 +57,153 @@ class TwoLayerFullPrecisionBPCNN(nn.Module):
         out = self.l2(h1a)        
         out = self.sigmoid2(out)
         return out
+
+
+
+class RNNLayer(nn.Module):
+    def __init__(self,  input_dim, out_dim, num_layers, init_weights = True, batch_first=True, rnn_layer = 'gru', normalization = False):
+        super().__init__()        
+
+        self.input_dim = input_dim
+        self.out_dim = out_dim
+        self.num_layers = num_layers
+        self.batch_first = batch_first
+        self.rnn_layer = rnn_layer
+        
+        self.E = torch.eye(self.input_dim, dtype=torch.float32)        
+
+        self.embedding1 = nn.Embedding(128,64)
+        self.embedding2 = nn.Embedding(2,64)
+
+        if rnn_layer == 'lstm':
+            self.rnn = nn.LSTM(input_size= self.input_dim, hidden_size=self.out_dim,\
+                          num_layers= self.num_layers, batch_first=self.batch_first)
+            self.fc = nn.Linear(out_dim*200, 2)
+        elif rnn_layer == 'gru':
+            self.rnn = nn.GRU(input_size= self.input_dim, hidden_size=self.out_dim,\
+                          num_layers= self.num_layers, batch_first=self.batch_first)
+        elif rnn_layer =='transformer':
+            #self.inpLinear = nn.Linear(2, self.input_dim)
+            self.rnn = nn.TransformerEncoderLayer(d_model=self.input_dim, nhead=self.out_dim)
+            self.fc = nn.Linear(input_dim*200, 2) # nn.Linear(out_dim*200, 2)
+        else:
+            raise NotImplementedError(rnn_layer)
+        
+        if init_weights:
+            self.rnn = init_lstm(self.rnn, self.out_dim)
+
+        if (normalization):
+            self.normalization = nn.BatchNorm1d(out_dim)
+        else:
+            self.normalization = None
+        
+        self.softmax = nn.Softmax(dim=-1)
+        
+    def forward(self, seq):
+        bsize = seq.size(0)        
+        
+        #data = self.E[seq.data.type(torch.long)]
+        #seq = data.to(torch.device("cuda:0"))
+        lay1=self.embedding1(seq.data[:,:,0].type(torch.long))
+        lay2=self.embedding2(seq.data[:,:,1].type(torch.long))
+        seq = torch.cat((lay1,lay2),2)
+
+        if self.rnn_layer == 'transformer':
+            #seq = self.inpLinear(seq)
+            self.rnn_out = self.rnn(seq)                   
+            #self.rnn_out = self.rnn_out[:,-1,:]  
+            self.rnn_out = self.rnn_out.reshape(len(self.rnn_out), 200*self.input_dim)            
+        elif self.rnn_layer =='lstm':
+            self.rnn_out, (self.h, self.c) = self.rnn(seq)                      
+            self.rnn_out = self.rnn_out.flatten(1)                     
+        elif self.rnn_layer == 'gru': 
+            self.rnn_out, self.h = self.rnn(seq)
+
+        if self.normalization:
+            self.rnn_out = self.normalization(self.rnn_out)
+        
+        out = self.fc(self.rnn_out)   
+
+        ## out = self.fc(self.rnn_out.view(bsize,-1))        
+        return self.softmax(out)
+
+
+device_idx = 0
 device = torch.device("cuda:"+str(device_idx) if torch.cuda.is_available() else "cpu")
 model = None
 allBranch = {}
 
 def main(outputName):
+    ## CNN or LSTM
+    mode = "LSTM" ## SOOOS REMEMBER TO CHANGE READING SEE LINE: 236    
+    bench = "557.xz"
+    
     ## GPU/CPU ##
     device = torch.device("cuda:"+str(device_idx) if torch.cuda.is_available() else "cpu")
-    ## Parameters ##
-    tableSize = 256
-    numFilters = 2
-    historyLen = 200
+
 
     # Name of pt model
-    modelFolder = "./specificBranch/531.deepsjeng/models/LSTM"
+    modelFolder = "./specificBranch/"+bench+"/models/"+mode+"/"
     models = os.listdir(modelFolder)
     modelsDict = {}
-    for modelN in models:
-        modelName = modelN
-        modelName = modelFolder + modelName
-        ## Model 
-        model = TwoLayerFullPrecisionBPCNN(tableSize=tableSize, numFilters=numFilters, historyLen=historyLen).to(device)
-
-        print(model)
-        ## TEST DATALOADER
-        # Parameters
-        paramsValid = {'batch_size': 64,
-                'shuffle': False,
-                'num_workers': 4}
-
     
+    if (mode=="CNN"):
+        ## Parameters ##
+        tableSize = 256
+        numFilters = 2
+        historyLen = 200
+        for modelN in models:
+            modelName = modelN
+            modelName = modelFolder + modelName
+            ## Model 
+            model = TwoLayerFullPrecisionBPCNN(tableSize=tableSize, numFilters=numFilters, historyLen=historyLen).to(device)
 
-        try:
-            print(modelName)
-            checkpoint = torch.load(modelName)
-            model.load_state_dict(checkpoint['model_state_dict'])
-            model.eval()
-        except:
-            print("FAILED TO LOAD FROM CHECKPOINT, CHECK FILE")
-            exit()
-        modelsDict[int(modelN[3:-3])] = model
+            print(model)
+            ## TEST DATALOADER
+            # Parameters
+            paramsValid = {'batch_size': 64,
+                    'shuffle': False,
+                    'num_workers': 4}
+            try:
+                print(modelName)
+                checkpoint = torch.load(modelName)
+                model.load_state_dict(checkpoint['model_state_dict'])
+                model.eval()
+            except:
+                print("FAILED TO LOAD FROM CHECKPOINT, CHECK FILE")
+                exit()
+            modelsDict[int(modelN[3:-3])] = model
+
+    if (mode=="LSTM"):
+        ## Parameters ##
+        n_class = 128
+        num_layers = 1
+        normalization = False
+        input_dim = 128
+        rnn_layer = 'lstm'
+
+        for modelN in models:
+            modelName = modelN
+            modelName = modelFolder + modelName
+            ## Model 
+            model = RNNLayer(rnn_layer=rnn_layer, input_dim=input_dim, out_dim=n_class, num_layers=num_layers, normalization=normalization).to(device)
+
+            print(model)
+            ## TEST DATALOADER
+            # Parameters
+            paramsValid = {'batch_size': 64,
+                    'shuffle': False,
+                    'num_workers': 4}
+            
+            try:
+                print(modelName)
+                checkpoint = torch.load(modelName)
+                model.load_state_dict(checkpoint['model_state_dict'])
+                model.eval()
+            except:
+                print("FAILED TO LOAD FROM CHECKPOINT, CHECK FILE")
+                exit()
+            modelsDict[int(modelN[4:-3])] = model
 
     if ('encodePCList' in checkpoint['input_Data']):
         encodePCList = checkpoint['input_Data']['encodePCList']    
@@ -105,7 +212,7 @@ def main(outputName):
     total=0
     now = time.time()
 
-    bench = "../Datasets/myTraces/531.deepsjeng/531.deepsjeng_ref-ref-1428B.champsimtrace.xz._.dataset_all.txt.gz"
+    bench = "../Datasets/myTraces/"+bench+"/557.xz_ref-cld-233B.champsimtrace.xz._.dataset_all.txt.gz"
     print(bench)
     with gzip.open(bench, 'rt') as fp:      
         #model.eval()
@@ -142,17 +249,17 @@ def main(outputName):
                         allBranch[ipH2P]['correct']+=1
                         allBranch[ipH2P]['acc'] = allBranch[ipH2P]['correct']/allBranch[ipH2P]['total']                
                 total+=1
-                if(total%500000==0):
+                if(total%5000==0):
                     print(correct,total, 100*correct/total)
                     p = pprint.PrettyPrinter()
                     p.pprint(allBranch)
-                    torch.save(allBranch, outputName+".pt")
+                    torch.save(allBranch, outputName)
             print(correct,total, 100*correct/total)
         except Exception as e:
             print("ERROR" ,e)
             print(correct,total, 100*correct/total)
             p.pprint(allBranch)
-            torch.save(allBranch, outputName+".pt")
+            torch.save(allBranch, outputName)
 
     end = time.time()
     print("total time taken to check: ", end-now)        
