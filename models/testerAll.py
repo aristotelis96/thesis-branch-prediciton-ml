@@ -133,9 +133,9 @@ device = torch.device("cuda:"+str(device_idx) if torch.cuda.is_available() else 
 model = None
 allBranch = {}
 
-def main(outputName):
+def main(outputName, mode):
     ## CNN or LSTM
-    mode = "LSTM" ## SOOOS REMEMBER TO CHANGE READING SEE LINE: 236    
+    mode = mode ## SOOOS REMEMBER TO CHANGE READING SEE LINE: 236    
     bench = "557.xz"
     
     ## GPU/CPU ##
@@ -260,7 +260,7 @@ def main(outputName):
                         allBranch[ipH2P]['correct']+=1
                         allBranch[ipH2P]['acc'] = allBranch[ipH2P]['correct']/allBranch[ipH2P]['total']                
                 total+=1
-                if(total%5000==0):
+                if(total%500000==0):
                     print(correct,total, 100*correct/total)
                     p = pprint.PrettyPrinter()
                     p.pprint(allBranch)
@@ -275,6 +275,7 @@ def main(outputName):
     end = time.time()
     print("total time taken to check: ", end-now)        
 if __name__ == '__main__':
-    if(len(sys.argv) != 2):
-        print("usage: script 'outputName' ")
-    main(sys.argv[1])
+    if(len(sys.argv) != 3):
+        print("usage: script 'outputName' 'MODE:LSTM/CNN'")
+        exit()
+    main(sys.argv[1], sys.argv[2])
