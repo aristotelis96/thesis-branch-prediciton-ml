@@ -103,9 +103,9 @@ class RNNLayer(nn.Module):
         bsize = seq.size(0)        
         
         #data = self.E[seq.data.type(torch.long)]
-        #seq = data.to(torch.device("cuda:0"))
-        lay1=self.embedding1(seq.data[:,:,0].type(torch.long))
-        lay2=self.embedding2(seq.data[:,:,1].type(torch.long))
+        #seq = data.to(torch.device("cuda:0"))                
+        lay1=self.embedding1(seq.data[:,:,0].type(torch.long).to(device))        
+        lay2=self.embedding2(seq.data[:,:,1].type(torch.long).to(device))        
         seq = torch.cat((lay1,lay2),2)
 
         if self.rnn_layer == 'transformer':
@@ -223,7 +223,8 @@ def main(outputName):
                     if "--- H2P ---" in line:
                         break            
             while True:
-                sample = torch.zeros((1,200), dtype=torch.float64)    
+                if (mode=="CNN"): sample = torch.zeros((1,200), dtype=torch.float64) 
+                if(mode=="LSTM"): sample = torch.zeros((1,200,2), dtype=torch.float64) #LSTM
                 line = fp.readline()            
                 if "--- H2P ---" in line or "\n"==line or line.startswith("Warmup"):                    
                     continue
@@ -234,9 +235,14 @@ def main(outputName):
                         break
                     [ip, taken] = line.split(" ")
                     pc = int(ip)
-                    encodedPC = (pc & 0b1111111) << 1
-                    encodedPC += int(taken)
-                    sample[0][history] = encodedPC
+                    if(mode=="CNN"):
+                        encodedPC = (pc & 0b1111111) << 1
+                        encodedPC += int(taken)
+                        sample[0][history] = encodedPC
+                    if(mode=="LSTM"):
+                        encodedPC = (pc & 0b1111111)
+                        sample[0][history][0] = encodedPC
+                        sample[0][history][1] = int(taken)
                     history+=1            
                 ipH2P = int(ipH2P)                
                 if ipH2P not in allBranch:
@@ -244,7 +250,12 @@ def main(outputName):
                 else:
                     allBranch[ipH2P]['total']+=1
                 if(ipH2P in modelsDict):
-                    if(torch.round(modelsDict[ipH2P](sample.float()))==label):
+                    prediction = False
+                    if(mode=="CNN"):
+                        prediction = torch.round(modelsDict[ipH2P](sample.float()))==label
+                    elif (mode=="LSTM"):
+                        prediction = (modelsDict[ipH2P](sample.float()).argmax(axis=1).cpu() == label)
+                    if(prediction):
                         correct+=1
                         allBranch[ipH2P]['correct']+=1
                         allBranch[ipH2P]['acc'] = allBranch[ipH2P]['correct']/allBranch[ipH2P]['total']                
