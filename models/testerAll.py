@@ -57,20 +57,20 @@ class TwoLayerFullPrecisionBPCNN(nn.Module):
         out = self.l2(h1a)        
         out = self.sigmoid2(out)
         return out
-device = torch.device("cuda:0")
+device = torch.device("cuda:"+str(device_idx) if torch.cuda.is_available() else "cpu")
 model = None
 allBranch = {}
 
-def main(branch):
+def main(outputName):
     ## GPU/CPU ##
-    device = torch.device("cuda:0")
+    device = torch.device("cuda:"+str(device_idx) if torch.cuda.is_available() else "cpu")
     ## Parameters ##
     tableSize = 256
     numFilters = 2
     historyLen = 200
 
     # Name of pt model
-    modelFolder = "./specificBranch/models/250/"
+    modelFolder = "./specificBranch/531.deepsjeng/models/LSTM"
     models = os.listdir(modelFolder)
     modelsDict = {}
     for modelN in models:
@@ -105,7 +105,7 @@ def main(branch):
     total=0
     now = time.time()
 
-    bench = "../Datasets/myTraces/541.leela/541.leela_ref-865B.champsimtrace.xz._.dataset_all.txt.gz"
+    bench = "../Datasets/myTraces/531.deepsjeng/531.deepsjeng_ref-ref-1428B.champsimtrace.xz._.dataset_all.txt.gz"
     print(bench)
     with gzip.open(bench, 'rt') as fp:      
         #model.eval()
@@ -146,15 +146,17 @@ def main(branch):
                     print(correct,total, 100*correct/total)
                     p = pprint.PrettyPrinter()
                     p.pprint(allBranch)
-                    torch.save(allBranch, "testerAll_measure.pt")
+                    torch.save(allBranch, outputName+".pt")
             print(correct,total, 100*correct/total)
         except Exception as e:
             print("ERROR" ,e)
             print(correct,total, 100*correct/total)
             p.pprint(allBranch)
-            torch.save(allBranch, "testerAll_measure.pt")
+            torch.save(allBranch, outputName+".pt")
 
     end = time.time()
     print("total time taken to check: ", end-now)        
 if __name__ == '__main__':
+    if(len(sys.argv) != 2):
+        print("usage: script 'outputName' ")
     main(sys.argv[1])
