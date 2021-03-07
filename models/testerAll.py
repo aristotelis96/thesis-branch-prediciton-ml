@@ -72,8 +72,8 @@ class RNNLayer(nn.Module):
         
         self.E = torch.eye(self.input_dim, dtype=torch.float32)        
 
-        self.embedding1 = nn.Embedding(128,64)
-        self.embedding2 = nn.Embedding(2,64)
+        self.embedding1 = nn.Embedding(256,self.input_dim)
+        #self.embedding2 = nn.Embedding(2,64)
 
         if rnn_layer == 'lstm':
             self.rnn = nn.LSTM(input_size= self.input_dim, hidden_size=self.out_dim,\
@@ -104,15 +104,19 @@ class RNNLayer(nn.Module):
         
         #data = self.E[seq.data.type(torch.long)]
         #seq = data.to(torch.device("cuda:0"))                
-        lay1=self.embedding1(seq.data[:,:,0].type(torch.long).to(device))        
-        lay2=self.embedding2(seq.data[:,:,1].type(torch.long).to(device))        
-        seq = torch.cat((lay1,lay2),2)
+        #lay1=self.embedding1(seq.data[:,:,0].type(torch.long).to(device))        
+        #lay2=self.embedding2(seq.data[:,:,1].type(torch.long).to(device))        
+        #seq = torch.cat((lay1,lay2),2)
 
         if self.rnn_layer == 'transformer':
-            #seq = self.inpLinear(seq)
-            self.rnn_out = self.rnn(seq)                   
+            #for transformer change batch first
+            seq = seq.reshape(seq.size(1), seq.size(0), seq.size(2))            
+            #OneHotVector = self.E[seq.data.long()].squeeze().to(device)
+            EmbeddingVector = self.embedding1(seq.long().to(device)).squeeze().to(device)
+            EmbeddingVector = EmbeddingVector.unsqueeze(0).permute(1,0,2)
+            self.rnn_out = self.rnn(EmbeddingVector)                   
             #self.rnn_out = self.rnn_out[:,-1,:]  
-            self.rnn_out = self.rnn_out.reshape(len(self.rnn_out), 200*self.input_dim)            
+            self.rnn_out = self.rnn_out.reshape(self.rnn_out.size(1),self.rnn_out.size(0)*self.rnn_out.size(2))            
         elif self.rnn_layer =='lstm':
             self.rnn_out, (self.h, self.c) = self.rnn(seq)                      
             self.rnn_out = self.rnn_out.flatten(1)                     
@@ -133,10 +137,10 @@ device = torch.device("cuda:"+str(device_idx) if torch.cuda.is_available() else 
 model = None
 allBranch = {}
 
-def main(outputName, mode):
+def main(outputName, mode, bench, trace, overwrite='False'):
     ## CNN or LSTM
     mode = mode ## SOOOS REMEMBER TO CHANGE READING SEE LINE: 236    
-    bench = "557.xz"
+    
     
     ## GPU/CPU ##
     device = torch.device("cuda:"+str(device_idx) if torch.cuda.is_available() else "cpu")
@@ -159,11 +163,6 @@ def main(outputName, mode):
             model = TwoLayerFullPrecisionBPCNN(tableSize=tableSize, numFilters=numFilters, historyLen=historyLen).to(device)
 
             print(model)
-            ## TEST DATALOADER
-            # Parameters
-            paramsValid = {'batch_size': 64,
-                    'shuffle': False,
-                    'num_workers': 4}
             try:
                 print(modelName)
                 checkpoint = torch.load(modelName)
@@ -189,11 +188,6 @@ def main(outputName, mode):
             model = RNNLayer(rnn_layer=rnn_layer, input_dim=input_dim, out_dim=n_class, num_layers=num_layers, normalization=normalization).to(device)
 
             print(model)
-            ## TEST DATALOADER
-            # Parameters
-            paramsValid = {'batch_size': 64,
-                    'shuffle': False,
-                    'num_workers': 4}
             
             try:
                 print(modelName)
@@ -205,36 +199,84 @@ def main(outputName, mode):
                 exit()
             modelsDict[int(modelN[4:-3])] = model
 
+    if (mode=="Transformer"):
+        ## Parameters ##
+        n_class = 2
+        num_layers = 1
+        normalization = False
+        input_dim = 16
+        rnn_layer = 'transformer'        
+        for modelN in models:
+            modelName = modelN
+            modelName = modelFolder + modelName
+            ## Model 
+            model = RNNLayer(rnn_layer=rnn_layer, input_dim=input_dim, out_dim=n_class, num_layers=num_layers, normalization=normalization).to(device)
+
+            print(model)
+            
+            try:
+                print(modelName)
+                checkpoint = torch.load(modelName)
+                model.load_state_dict(checkpoint['model_state_dict'])
+                model.eval()
+            except:
+                print("FAILED TO LOAD FROM CHECKPOINT, CHECK FILE")
+                exit()
+            modelsDict[int(modelN[3:-3])] = model
+    
     if ('encodePCList' in checkpoint['input_Data']):
         encodePCList = checkpoint['input_Data']['encodePCList']    
-
+    allBranch={}
     correct = 0
     total=0
     now = time.time()
 
-    bench = "../Datasets/myTraces/"+bench+"/557.xz_ref-cld-233B.champsimtrace.xz._.dataset_all.txt.gz"
+    bench = "../Datasets/myTraces/"+bench+"/"+ trace
     print(bench)
     with gzip.open(bench, 'rt') as fp:      
         #model.eval()
         try:        
-            line=""
-            if "--- H2P ---" not in line:
-                for line in fp:
-                    if "--- H2P ---" in line:
-                        break            
-            while True:
+            for line in fp:
+                if "--- H2P ---" not in line:                    
+                    continue
+                break
+            if(overwrite!='True'):
+                # check if output file exists
+                if(os.path.isfile(outputName)):
+                    # if yes, count total branches you need to skip
+                    skip=0
+                    allBranch = torch.load(outputName)
+                    for branch in allBranch:
+                        skip+=allBranch[branch]['total']
+                    while total<skip:                        
+                        line = fp.readline()            
+                        if "--- H2P ---" in line or "\n"==line or line.startswith("Warmup"):                    
+                            continue
+                        for line in fp:
+                            if "--- H2P ---" in line or "\n"==line or line.startswith("Warmup"):                    
+                                break
+                        if(total%500000==0):
+                            print(skip, total)
+                        total+=1
+                    for branch in allBranch:
+                        correct+=allBranch[branch]['correct']
+            # when done start overwriting outputName file                        
+            overwrite='True'
+            #continue execution
+            while True:                
                 if (mode=="CNN"): sample = torch.zeros((1,200), dtype=torch.float64) 
                 if(mode=="LSTM"): sample = torch.zeros((1,200,2), dtype=torch.float64) #LSTM
+                if (mode=='Transformer'): sample = torch.zeros((1,200,1), dtype=torch.float64) 
                 line = fp.readline()            
-                if "--- H2P ---" in line or "\n"==line or line.startswith("Warmup"):                    
+                if "Reached end of trace" in line or "--- H2P ---" in line or "\n"==line or line.startswith("Warmup"):                    
                     continue
                 [ipH2P, label] = np.float64(line.split(" "))                
                 history=0            
                 for line in fp:
-                    if "--- H2P ---" in line or "\n"==line or line.startswith("Warmup"):                    
+                    if "--- H2P ---" in line or "Reached end of trace" in line or "\n"==line or line.startswith("Warmup"):                    
                         break
                     [ip, taken] = line.split(" ")
-                    pc = int(ip)
+                    pc = int(ip)                      
                     if(mode=="CNN"):
                         encodedPC = (pc & 0b1111111) << 1
                         encodedPC += int(taken)
@@ -243,6 +285,12 @@ def main(outputName, mode):
                         encodedPC = (pc & 0b1111111)
                         sample[0][history][0] = encodedPC
                         sample[0][history][1] = int(taken)
+                    if(mode=='Transformer'):
+                        encodedPC = (pc & 0b1111111) << 1
+                        # Add taken or not taken
+                        encodedPC += int(taken)
+                        #encodedPCArray[i] = encodedPC
+                        sample[0][history][0] = encodedPC
                     history+=1            
                 ipH2P = int(ipH2P)                
                 if ipH2P not in allBranch:
@@ -254,6 +302,8 @@ def main(outputName, mode):
                     if(mode=="CNN"):
                         prediction = torch.round(modelsDict[ipH2P](sample.float()))==label
                     elif (mode=="LSTM"):
+                        prediction = (modelsDict[ipH2P](sample.float()).argmax(axis=1).cpu() == label)
+                    elif (mode=='Transformer'):
                         prediction = (modelsDict[ipH2P](sample.float()).argmax(axis=1).cpu() == label)
                     if(prediction):
                         correct+=1
@@ -275,7 +325,11 @@ def main(outputName, mode):
     end = time.time()
     print("total time taken to check: ", end-now)        
 if __name__ == '__main__':
-    if(len(sys.argv) != 3):
-        print("usage: script 'outputName' 'MODE:LSTM/CNN'")
+    if(len(sys.argv) < 5):
+        print("usage: script 'outputName', MODE:LSTM/CNN, benchmark, trace, overwrite=true/false(default false)")
         exit()
-    main(sys.argv[1], sys.argv[2])
+    # check to overwite output (default no)    
+    overwrite='False'
+    if (len(sys.argv) == 6):
+        overwrite = sys.argv[5]
+    main(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], overwrite=overwrite)
