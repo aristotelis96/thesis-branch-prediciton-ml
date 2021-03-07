@@ -84,7 +84,7 @@ class RNNLayer(nn.Module):
                           num_layers= self.num_layers, batch_first=self.batch_first)
         elif rnn_layer =='transformer':
             #self.inpLinear = nn.Linear(2, self.input_dim)
-            self.rnn = nn.TransformerEncoderLayer(d_model=self.input_dim, nhead=self.out_dim)
+            self.rnn = nn.TransformerEncoderLayer(d_model=self.input_dim, nhead=self.out_dim, dim_feedforward=16)
             self.fc = nn.Linear(input_dim*200, 2) # nn.Linear(out_dim*200, 2)
         else:
             raise NotImplementedError(rnn_layer)
