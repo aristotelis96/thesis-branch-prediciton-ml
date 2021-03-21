@@ -11,6 +11,8 @@ import os
 import numpy as np
 import gzip
 import pprint
+import branchnet.model as BranchNetModel
+import yaml
 
 def init_lstm(lstm, lstm_hidden_size, forget_bias=2):
     for name,weights in lstm.named_parameters():
@@ -84,7 +86,8 @@ class RNNLayer(nn.Module):
                           num_layers= self.num_layers, batch_first=self.batch_first)
         elif rnn_layer =='transformer':
             #self.inpLinear = nn.Linear(2, self.input_dim)
-            self.rnn = nn.TransformerEncoderLayer(d_model=self.input_dim, nhead=self.out_dim, dim_feedforward=16)
+            #self.rnn = nn.TransformerEncoderLayer(d_model=self.input_dim, nhead=self.out_dim, dim_feedforward=16)
+            self.rnn = nn.Transformer(d_model=self.input_dim, nhead=self.out_dim, num_encoder_layers=self.num_layers, num_decoder_layers=self.num_layers, dim_feedforward=512,dropout=0.5)
             self.fc = nn.Linear(input_dim*200, 2) # nn.Linear(out_dim*200, 2)
         else:
             raise NotImplementedError(rnn_layer)
@@ -114,7 +117,9 @@ class RNNLayer(nn.Module):
             #OneHotVector = self.E[seq.data.long()].squeeze().to(device)
             EmbeddingVector = self.embedding1(seq.long().to(device)).squeeze().to(device)
             EmbeddingVector = EmbeddingVector.unsqueeze(0).permute(1,0,2)
-            self.rnn_out = self.rnn(EmbeddingVector)                   
+            #self.rnn_out = self.rnn(EmbeddingVector)                   
+            self.rnn_out = self.rnn(EmbeddingVector, EmbeddingVector, tgt_mask=self.rnn.generate_square_subsequent_mask(200).to(device)) 
+
             #self.rnn_out = self.rnn_out[:,-1,:]  
             self.rnn_out = self.rnn_out.reshape(self.rnn_out.size(1),self.rnn_out.size(0)*self.rnn_out.size(2))            
         elif self.rnn_layer =='lstm':
@@ -150,7 +155,23 @@ def main(outputName, mode, bench, trace, overwrite='False'):
     modelFolder = "./specificBranch/"+bench+"/models/"+mode+"/"
     models = os.listdir(modelFolder)
     modelsDict = {}
-    
+    if (mode=="BranchNet"):
+        for modelN in models:
+            modelName = modelN
+            modelName = modelFolder + modelName
+            ## Model 
+            model = BranchNetModel.BranchNet(yaml.safe_load(open("./branchnet/configs/tarsa.yaml")),BranchNetModel.BranchNetTrainingPhaseKnobs()).to(device)
+
+            print(model)
+            try:
+                print(modelName)
+                checkpoint = torch.load(modelName)
+                model.load_state_dict(checkpoint['model_state_dict'])
+                model.eval()
+            except:
+                print("FAILED TO LOAD FROM CHECKPOINT, CHECK FILE")
+                exit()
+            modelsDict[int(modelN[3:-3])] = model
     if (mode=="CNN"):
         ## Parameters ##
         tableSize = 256
@@ -201,10 +222,10 @@ def main(outputName, mode, bench, trace, overwrite='False'):
 
     if (mode=="Transformer"):
         ## Parameters ##
-        n_class = 2
+        n_class = 16
         num_layers = 1
         normalization = False
-        input_dim = 16
+        input_dim = 32
         rnn_layer = 'transformer'        
         for modelN in models:
             modelName = modelN
@@ -231,9 +252,14 @@ def main(outputName, mode, bench, trace, overwrite='False'):
     total=0
     now = time.time()
 
-    bench = "../Datasets/myTraces/"+bench+"/"+ trace
-    print(bench)
-    with gzip.open(bench, 'rt') as fp:      
+    benchPath = "../Datasets/myTraces/"+bench+"/"+ trace
+    print(benchPath)
+    timeRead = 0
+    timeEncode = 0
+    timePredict = 0   
+    timeTotal=0     
+    outputTrace = gzip.open("predictionTraces/"+bench+"/"+trace.replace("dataset_all", "H2P_predictions"), 'wt')
+    with gzip.open(benchPath, 'rt') as fp:      
         #model.eval()
         try:        
             for line in fp:
@@ -262,66 +288,84 @@ def main(outputName, mode, bench, trace, overwrite='False'):
                         correct+=allBranch[branch]['correct']
             # when done start overwriting outputName file                        
             overwrite='True'
-            #continue execution
-            while True:                
-                if (mode=="CNN"): sample = torch.zeros((1,200), dtype=torch.float64) 
-                if(mode=="LSTM"): sample = torch.zeros((1,200,2), dtype=torch.float64) #LSTM
-                if (mode=='Transformer'): sample = torch.zeros((1,200,1), dtype=torch.float64) 
+            #continue execution                
+            temp = [[0]*200]
+            while True:
+                timeTotalStart=time.time()
+                timeStart = time.time()                
+                # if (mode=="CNN" or mode=="BranchNet"): sample = torch.zeros((1,200), dtype=torch.float64) 
+                # if(mode=="LSTM"): sample = torch.zeros((1,200,2), dtype=torch.float64) #LSTM
+                # if (mode=='Transformer'): sample = torch.zeros((1,200,1), dtype=torch.float64) 
                 line = fp.readline()            
                 if "Reached end of trace" in line or "--- H2P ---" in line or "\n"==line or line.startswith("Warmup"):                    
                     continue
+                timeEnd = time.time()
+                timeRead += timeEnd - timeStart
                 [ipH2P, label] = np.float64(line.split(" "))                
                 history=0            
+                timeStart = time.time()                
                 for line in fp:
                     if "--- H2P ---" in line or "Reached end of trace" in line or "\n"==line or line.startswith("Warmup"):                    
+                        sample = torch.tensor(temp, dtype=torch.float64)
                         break
-                    [ip, taken] = line.split(" ")
-                    pc = int(ip)                      
-                    if(mode=="CNN"):
-                        encodedPC = (pc & 0b1111111) << 1
-                        encodedPC += int(taken)
-                        sample[0][history] = encodedPC
-                    if(mode=="LSTM"):
-                        encodedPC = (pc & 0b1111111)
-                        sample[0][history][0] = encodedPC
-                        sample[0][history][1] = int(taken)
-                    if(mode=='Transformer'):
-                        encodedPC = (pc & 0b1111111) << 1
-                        # Add taken or not taken
-                        encodedPC += int(taken)
-                        #encodedPCArray[i] = encodedPC
-                        sample[0][history][0] = encodedPC
-                    history+=1            
+                    temp[0][history] = int(line)    
+                    # [ip, taken] = line.split(" ")
+                    # pc = int(ip)
+                    # if(mode=="CNN"):
+                    #     encodedPC = (pc & 0b1111111) << 1
+                    #     encodedPC += int(taken)
+                    #     sample[0][history] = encodedPC
+                    # if(mode=="LSTM"):
+                    #     encodedPC = (pc & 0b1111111)
+                    #     sample[0][history][0] = encodedPC
+                    #     sample[0][history][1] = int(taken)
+                    # if(mode=='Transformer'):                        
+                    #     encodedPC = (pc & 0b1111111) << 1
+                    #     # Add taken or not taken
+                    #     encodedPC += int(taken)
+                    #     #encodedPCArray[i] = encodedPC
+                    #     sample[0][history][0] = encodedPC
+                    history+=1          
+                timeEnd = time.time()
+                timeEncode += timeEnd - timeStart  
                 ipH2P = int(ipH2P)                
                 if ipH2P not in allBranch:
                     allBranch[ipH2P] = {'total': 1, 'correct' : 0, 'acc': 0}
                 else:
                     allBranch[ipH2P]['total']+=1
+                timeStart = time.time()
                 if(ipH2P in modelsDict):
-                    prediction = False
-                    if(mode=="CNN"):
-                        prediction = torch.round(modelsDict[ipH2P](sample.float()))==label
+                    prediction = False   
+                    if(mode=="BranchNet"):
+                        prediction = torch.round(modelsDict[ipH2P](sample.long().to(device)))
+                    elif(mode=="CNN"):
+                        prediction = torch.round(modelsDict[ipH2P](sample.float()))
                     elif (mode=="LSTM"):
-                        prediction = (modelsDict[ipH2P](sample.float()).argmax(axis=1).cpu() == label)
+                        prediction = (modelsDict[ipH2P](sample.float()).argmax(axis=1).cpu())
                     elif (mode=='Transformer'):
-                        prediction = (modelsDict[ipH2P](sample.float()).argmax(axis=1).cpu() == label)
-                    if(prediction):
+                        prediction = (modelsDict[ipH2P](sample.float()).argmax(axis=1).cpu())
+                    if(prediction == label):
                         correct+=1
                         allBranch[ipH2P]['correct']+=1
                         allBranch[ipH2P]['acc'] = allBranch[ipH2P]['correct']/allBranch[ipH2P]['total']                
                 total+=1
-                if(total%500000==0):
+                timeEnd = time.time()
+                timePredict += timeEnd - timeStart
+                outputTrace.write(str(ipH2P)+" "+str(int(prediction))+"\n")
+                timeTotal += time.time() - timeTotalStart
+                if(total%1000000==0):
                     print(correct,total, 100*correct/total)
                     p = pprint.PrettyPrinter()
                     p.pprint(allBranch)
                     torch.save(allBranch, outputName)
+                    print("Total:", timeTotal, "Read:", timeRead, round((timeRead/timeTotal)*100), "Encode:", timeEncode, round((timeEncode/timeTotal)*100), "Predict:", timePredict, round((timePredict/timeTotal)*100))
             print(correct,total, 100*correct/total)
         except Exception as e:
             print("ERROR" ,e)
             print(correct,total, 100*correct/total)
             p.pprint(allBranch)
             torch.save(allBranch, outputName)
-
+    outputTrace.close()
     end = time.time()
     print("total time taken to check: ", end-now)        
 if __name__ == '__main__':
