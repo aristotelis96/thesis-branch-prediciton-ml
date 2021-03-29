@@ -255,7 +255,7 @@ def main(outputName, mode, bench, trace, overwrite='False'):
 
     if(platform.system()=="Windows"):
         benchPath = "../Datasets/myTraces/"+bench+"/"+ trace
-    else(platform.system()=="Linux"):
+    elif(platform.system()=="Linux"):
         benchPath = "/local/avontz/myTraces/datasets/"+bench+"/"+ trace
     print(benchPath)
     timeRead = 0
