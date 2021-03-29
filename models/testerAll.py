@@ -155,7 +155,7 @@ def main(outputName, mode, bench, trace, overwrite='False'):
     modelFolder = "./specificBranch/"+bench+"/models/"+mode+"/"
     models = os.listdir(modelFolder)
     modelsDict = {}
-    if (mode=="BranchNet"):
+    if (mode=="BranchNetTarsa"):
         for modelN in models:
             modelName = modelN
             modelName = modelFolder + modelName
@@ -258,114 +258,174 @@ def main(outputName, mode, bench, trace, overwrite='False'):
     timeEncode = 0
     timePredict = 0   
     timeTotal=0     
-    outputTrace = gzip.open("predictionTraces/"+bench+"/"+trace.replace("dataset_all", "H2P_predictions"), 'wt')
-    with gzip.open(benchPath, 'rt') as fp:      
-        #model.eval()
-        try:        
-            for line in fp:
-                if "--- H2P ---" not in line:                    
-                    continue
-                break
-            if(overwrite!='True'):
-                # check if output file exists
-                if(os.path.isfile(outputName)):
-                    # if yes, count total branches you need to skip
-                    skip=0
-                    allBranch = torch.load(outputName)
-                    for branch in allBranch:
-                        skip+=allBranch[branch]['total']
-                    while total<skip:                        
-                        line = fp.readline()            
-                        if "--- H2P ---" in line or "\n"==line or line.startswith("Warmup"):                    
-                            continue
-                        for line in fp:
-                            if "--- H2P ---" in line or "\n"==line or line.startswith("Warmup"):                    
-                                break
-                        if(total%500000==0):
-                            print(skip, total)
-                        total+=1
-                    for branch in allBranch:
-                        correct+=allBranch[branch]['correct']
-            # when done start overwriting outputName file                        
-            overwrite='True'
-            #continue execution                
-            temp = [[0]*200]
-            while True:
-                timeTotalStart=time.time()
-                timeStart = time.time()                
-                # if (mode=="CNN" or mode=="BranchNet"): sample = torch.zeros((1,200), dtype=torch.float64) 
-                # if(mode=="LSTM"): sample = torch.zeros((1,200,2), dtype=torch.float64) #LSTM
-                # if (mode=='Transformer'): sample = torch.zeros((1,200,1), dtype=torch.float64) 
-                line = fp.readline()            
-                if "Reached end of trace" in line or "--- H2P ---" in line or "\n"==line or line.startswith("Warmup"):                    
-                    continue
-                timeEnd = time.time()
-                timeRead += timeEnd - timeStart
-                [ipH2P, label] = np.float64(line.split(" "))                
-                history=0            
-                timeStart = time.time()                
+    outputTrace = gzip.open("predictionTraces/"+bench+"/"+mode+"/"+trace.replace("dataset_all", "H2P_predictions"), 'wt')
+    # branches that contain "all branches "
+    if "allBranches" in trace: 
+        with gzip.open(benchPath, 'rt') as fp:
+            try:
+                history =  torch.zeros((1,200), dtype=torch.float64) 
+                while True:
+                    timeTotalStart=time.time()
+                    timeStart = time.time()                                
+                    line = fp.readline()
+                    [ipFloat, label] = np.float64(line.split(" "))     
+                    ip = int(ipFloat)                    
+                    timeRead += time.time()-timeStart
+                    #prediction first if ip in dict of branchnets                    
+                    timeStart = time.time()
+                    if(ip in modelsDict):
+                        if ip not in allBranch:
+                            allBranch[ip] = {'total': 1, 'correct' : 0, 'acc': 0}
+                        else:
+                            allBranch[ip]['total']+=1
+                        prediction = 2.0   
+                        if(mode=="BranchNetTarsa"):
+                            prediction = torch.round(modelsDict[ip](history.long().to(device)))
+                        elif(mode=="CNN"):
+                            prediction = torch.round(modelsDict[ip](history.float()))
+                        elif (mode=="LSTM"):
+                            prediction = (modelsDict[ip](history.float()).argmax(axis=1).cpu())
+                        elif (mode=='Transformer'):
+                            prediction = (modelsDict[ip](history.float()).argmax(axis=1).cpu())
+                        if(prediction == label):
+                            correct+=1
+                            allBranch[ip]['correct']+=1
+                            allBranch[ip]['acc'] = allBranch[ip]['correct']/allBranch[ip]['total']                
+                        total+=1                        
+                        outputTrace.write(str(ip)+" "+str(int(prediction))+"\n")                        
+                    timeEnd = time.time()
+                    timePredict += timeEnd - timeStart
+                    #update history tensor                        
+                    #encode ip           
+                    timeStart = time.time()   
+                    ip = int(ip)                                 
+                    encodedPC = (ip & 0b1111111) << 1
+                    encodedPC += int(label)
+                    encodedPCTensor = torch.tensor([[encodedPC]], dtype=torch.float64)
+                    history = torch.cat((encodedPCTensor, history[:,:-1]),1)                        
+                    timeEnd = time.time()
+                    timeEncode += timeEnd - timeStart                                                                          
+                    timeTotal += time.time() - timeTotalStart                    
+                    if(total%1000000==0):
+                        print(correct,total, 100*correct/total)
+                        p = pprint.PrettyPrinter()
+                        p.pprint(allBranch)
+                        torch.save(allBranch, outputName)
+                        print("Total:", timeTotal, "Read:", timeRead, round((timeRead/timeTotal)*100), "Encode:", timeEncode, round((timeEncode/timeTotal)*100), "Predict:", timePredict, round((timePredict/timeTotal)*100))
+                print(correct,total, 100*correct/total)
+            except Exception as e:
+                print("ERROR" ,e)
+                print(correct,total, 100*correct/total)
+                p.pprint(allBranch)
+                torch.save(allBranch, outputName)
+    else:
+        with gzip.open(benchPath, 'rt') as fp:      
+            #model.eval()
+            try:        
                 for line in fp:
-                    if "--- H2P ---" in line or "Reached end of trace" in line or "\n"==line or line.startswith("Warmup"):                    
-                        sample = torch.tensor(temp, dtype=torch.float64)
-                        break
-                    temp[0][history] = int(line)    
-                    # [ip, taken] = line.split(" ")
-                    # pc = int(ip)
-                    # if(mode=="CNN"):
-                    #     encodedPC = (pc & 0b1111111) << 1
-                    #     encodedPC += int(taken)
-                    #     sample[0][history] = encodedPC
-                    # if(mode=="LSTM"):
-                    #     encodedPC = (pc & 0b1111111)
-                    #     sample[0][history][0] = encodedPC
-                    #     sample[0][history][1] = int(taken)
-                    # if(mode=='Transformer'):                        
-                    #     encodedPC = (pc & 0b1111111) << 1
-                    #     # Add taken or not taken
-                    #     encodedPC += int(taken)
-                    #     #encodedPCArray[i] = encodedPC
-                    #     sample[0][history][0] = encodedPC
-                    history+=1          
-                timeEnd = time.time()
-                timeEncode += timeEnd - timeStart  
-                ipH2P = int(ipH2P)                
-                if ipH2P not in allBranch:
-                    allBranch[ipH2P] = {'total': 1, 'correct' : 0, 'acc': 0}
-                else:
-                    allBranch[ipH2P]['total']+=1
-                timeStart = time.time()
-                if(ipH2P in modelsDict):
-                    prediction = False   
-                    if(mode=="BranchNet"):
-                        prediction = torch.round(modelsDict[ipH2P](sample.long().to(device)))
-                    elif(mode=="CNN"):
-                        prediction = torch.round(modelsDict[ipH2P](sample.float()))
-                    elif (mode=="LSTM"):
-                        prediction = (modelsDict[ipH2P](sample.float()).argmax(axis=1).cpu())
-                    elif (mode=='Transformer'):
-                        prediction = (modelsDict[ipH2P](sample.float()).argmax(axis=1).cpu())
-                    if(prediction == label):
-                        correct+=1
-                        allBranch[ipH2P]['correct']+=1
-                        allBranch[ipH2P]['acc'] = allBranch[ipH2P]['correct']/allBranch[ipH2P]['total']                
-                total+=1
-                timeEnd = time.time()
-                timePredict += timeEnd - timeStart
-                outputTrace.write(str(ipH2P)+" "+str(int(prediction))+"\n")
-                timeTotal += time.time() - timeTotalStart
-                if(total%1000000==0):
-                    print(correct,total, 100*correct/total)
-                    p = pprint.PrettyPrinter()
-                    p.pprint(allBranch)
-                    torch.save(allBranch, outputName)
-                    print("Total:", timeTotal, "Read:", timeRead, round((timeRead/timeTotal)*100), "Encode:", timeEncode, round((timeEncode/timeTotal)*100), "Predict:", timePredict, round((timePredict/timeTotal)*100))
-            print(correct,total, 100*correct/total)
-        except Exception as e:
-            print("ERROR" ,e)
-            print(correct,total, 100*correct/total)
-            p.pprint(allBranch)
-            torch.save(allBranch, outputName)
-    outputTrace.close()
+                    if "--- H2P ---" not in line:                    
+                        continue
+                    break
+                if(overwrite!='True'):
+                    # check if output file exists
+                    if(os.path.isfile(outputName)):
+                        # if yes, count total branches you need to skip
+                        skip=0
+                        allBranch = torch.load(outputName)
+                        for branch in allBranch:
+                            skip+=allBranch[branch]['total']
+                        while total<skip:                        
+                            line = fp.readline()            
+                            if "--- H2P ---" in line or "\n"==line or line.startswith("Warmup"):                    
+                                continue
+                            for line in fp:
+                                if "--- H2P ---" in line or "\n"==line or line.startswith("Warmup"):                    
+                                    break
+                            if(total%500000==0):
+                                print(skip, total)
+                            total+=1
+                        for branch in allBranch:
+                            correct+=allBranch[branch]['correct']
+                # when done start overwriting outputName file                        
+                overwrite='True'
+                #continue execution                
+                temp = [[0]*200]
+                while True:
+                    timeTotalStart=time.time()
+                    timeStart = time.time()                
+                    # if (mode=="CNN" or mode=="BranchNet"): sample = torch.zeros((1,200), dtype=torch.float64) 
+                    # if(mode=="LSTM"): sample = torch.zeros((1,200,2), dtype=torch.float64) #LSTM
+                    # if (mode=='Transformer'): sample = torch.zeros((1,200,1), dtype=torch.float64) 
+                    line = fp.readline()            
+                    if "Reached end of trace" in line or "--- H2P ---" in line or "\n"==line or line.startswith("Warmup"):                    
+                        continue
+                    timeEnd = time.time()
+                    timeRead += timeEnd - timeStart
+                    [ipH2P, label] = np.float64(line.split(" "))                
+                    history=0            
+                    timeStart = time.time()                
+                    for line in fp:
+                        if "--- H2P ---" in line or "Reached end of trace" in line or "\n"==line or line.startswith("Warmup"):                    
+                            sample = torch.tensor(temp, dtype=torch.float64)
+                            break
+                        temp[0][history] = int(line)    
+                        # [ip, taken] = line.split(" ")
+                        # pc = int(ip)
+                        # if(mode=="CNN"):
+                        #     encodedPC = (pc & 0b1111111) << 1
+                        #     encodedPC += int(taken)
+                        #     sample[0][history] = encodedPC
+                        # if(mode=="LSTM"):
+                        #     encodedPC = (pc & 0b1111111)
+                        #     sample[0][history][0] = encodedPC
+                        #     sample[0][history][1] = int(taken)
+                        # if(mode=='Transformer'):                        
+                        #     encodedPC = (pc & 0b1111111) << 1
+                        #     # Add taken or not taken
+                        #     encodedPC += int(taken)
+                        #     #encodedPCArray[i] = encodedPC
+                        #     sample[0][history][0] = encodedPC
+                        history+=1          
+                    timeEnd = time.time()
+                    timeEncode += timeEnd - timeStart  
+                    ipH2P = int(ipH2P)                
+                    timeStart = time.time()
+                    if(ipH2P in modelsDict):
+                        if ipH2P not in allBranch:
+                            allBranch[ipH2P] = {'total': 1, 'correct' : 0, 'acc': 0}
+                        else:
+                            allBranch[ipH2P]['total']+=1
+                        prediction = 2.0   
+                        if(mode=="BranchNetTarsa"):
+                            prediction = torch.round(modelsDict[ipH2P](sample.long().to(device)))
+                        elif(mode=="CNN"):
+                            prediction = torch.round(modelsDict[ipH2P](sample.float()))
+                        elif (mode=="LSTM"):
+                            prediction = (modelsDict[ipH2P](sample.float()).argmax(axis=1).cpu())
+                        elif (mode=='Transformer'):
+                            prediction = (modelsDict[ipH2P](sample.float()).argmax(axis=1).cpu())
+                        if(prediction == label):
+                            correct+=1
+                            allBranch[ipH2P]['correct']+=1
+                            allBranch[ipH2P]['acc'] = allBranch[ipH2P]['correct']/allBranch[ipH2P]['total']                
+                        total+=1
+                    timeEnd = time.time()
+                    timePredict += timeEnd - timeStart
+                    outputTrace.write(str(ipH2P)+" "+str(int(prediction))+"\n")
+                    timeTotal += time.time() - timeTotalStart                    
+                    if(total%50000==0):
+                        print(correct,total, 100*correct/total)
+                        p = pprint.PrettyPrinter()
+                        p.pprint(allBranch)
+                        torch.save(allBranch, outputName)
+                        print("Total:", timeTotal, "Read:", timeRead, round((timeRead/timeTotal)*100), "Encode:", timeEncode, round((timeEncode/timeTotal)*100), "Predict:", timePredict, round((timePredict/timeTotal)*100))
+                print(correct,total, 100*correct/total)
+            except Exception as e:
+                print("ERROR" ,e)
+                print(correct,total, 100*correct/total)
+                p.pprint(allBranch)
+                torch.save(allBranch, outputName)
+        outputTrace.close()
     end = time.time()
     print("total time taken to check: ", end-now)        
 if __name__ == '__main__':
