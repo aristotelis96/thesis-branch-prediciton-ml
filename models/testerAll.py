@@ -259,6 +259,9 @@ def main(outputName, mode, bench, trace, overwrite='False'):
     timePredict = 0   
     timeTotal=0     
     outputTrace = gzip.open("predictionTraces/"+bench+"/"+mode+"/"+trace.replace("dataset_all", "H2P_predictions"), 'wt')
+    IPsToPredict = list(modelsDict.keys())
+    #first line should contain ips predictions 
+    outputTrace.write(" ".join(str(x) for x in list(modelsDict.keys()))+"\n")
     # branches that contain "all branches "
     if "allBranches" in trace: 
         with gzip.open(benchPath, 'rt') as fp:
