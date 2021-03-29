@@ -1,3 +1,4 @@
+import platform
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -165,7 +166,7 @@ def main(outputName, mode, bench, trace, overwrite='False'):
             print(model)
             try:
                 print(modelName)
-                checkpoint = torch.load(modelName)
+                checkpoint = torch.load(modelName, map_location=device)
                 model.load_state_dict(checkpoint['model_state_dict'])
                 model.eval()
             except:
@@ -186,7 +187,7 @@ def main(outputName, mode, bench, trace, overwrite='False'):
             print(model)
             try:
                 print(modelName)
-                checkpoint = torch.load(modelName)
+                checkpoint = torch.load(modelName, map_location=device)
                 model.load_state_dict(checkpoint['model_state_dict'])
                 model.eval()
             except:
@@ -237,7 +238,7 @@ def main(outputName, mode, bench, trace, overwrite='False'):
             
             try:
                 print(modelName)
-                checkpoint = torch.load(modelName)
+                checkpoint = torch.load(modelName, map_location=device)
                 model.load_state_dict(checkpoint['model_state_dict'])
                 model.eval()
             except:
@@ -252,7 +253,10 @@ def main(outputName, mode, bench, trace, overwrite='False'):
     total=0
     now = time.time()
 
-    benchPath = "../Datasets/myTraces/"+bench+"/"+ trace
+    if(platform.system()=="Windows"):
+        benchPath = "../Datasets/myTraces/"+bench+"/"+ trace
+    else(platform.system()=="Linux"):
+        benchPath = "/local/avontz/myTraces/datasets/"+bench+"/"+ trace
     print(benchPath)
     timeRead = 0
     timeEncode = 0
