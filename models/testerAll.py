@@ -315,7 +315,7 @@ def main(outputName, mode, bench, trace, overwrite='False'):
                     timeEnd = time.time()
                     timeEncode += timeEnd - timeStart                                                                          
                     timeTotal += time.time() - timeTotalStart                    
-                    if(total%100000==0):
+                    if(total%1000000==0):
                         print(correct,total, 100*correct/total)
                         p = pprint.PrettyPrinter()
                         p.pprint(allBranch)
@@ -423,7 +423,7 @@ def main(outputName, mode, bench, trace, overwrite='False'):
                     timePredict += timeEnd - timeStart
                     outputTrace.write(str(ipH2P)+" "+str(int(prediction))+"\n")
                     timeTotal += time.time() - timeTotalStart                    
-                    if(total%5000==0):
+                    if(total%1000000==0):
                         print(correct,total, 100*correct/total)
                         p = pprint.PrettyPrinter()
                         p.pprint(allBranch)
