@@ -14,7 +14,7 @@ import gzip
 import pprint
 import branchnet.model as BranchNetModel
 import yaml
-
+from collections import deque
 def init_lstm(lstm, lstm_hidden_size, forget_bias=2):
     for name,weights in lstm.named_parameters():
         if "bias_hh" in name:
@@ -271,6 +271,7 @@ def main(outputName, mode, bench, trace, overwrite='False'):
         with gzip.open(benchPath, 'rt') as fp:
             try:
                 history =  torch.zeros((1,200), dtype=torch.float64) 
+                historyDq = deque([0]*200)
                 while True:
                     timeTotalStart=time.time()
                     timeStart = time.time()                                
@@ -286,6 +287,7 @@ def main(outputName, mode, bench, trace, overwrite='False'):
                         else:
                             allBranch[ip]['total']+=1
                         prediction = 2.0   
+                        history = torch.tensor(historyDq).unsqueeze(dim=0)
                         if(mode=="BranchNetTarsa"):
                             prediction = torch.round(modelsDict[ip](history.long().to(device)))
                         elif(mode=="CNN"):
@@ -308,17 +310,18 @@ def main(outputName, mode, bench, trace, overwrite='False'):
                     ip = int(ip)                                 
                     encodedPC = (ip & 0b1111111) << 1
                     encodedPC += int(label)
-                    encodedPCTensor = torch.tensor([[encodedPC]], dtype=torch.float64)
-                    history = torch.cat((encodedPCTensor, history[:,:-1]),1)                        
+                    historyDq.pop()
+                    historyDq.appendleft(encodedPC)                    
                     timeEnd = time.time()
                     timeEncode += timeEnd - timeStart                                                                          
                     timeTotal += time.time() - timeTotalStart                    
-                    if(total%1000000==0):
+                    if(total%100000==0):
                         print(correct,total, 100*correct/total)
                         p = pprint.PrettyPrinter()
                         p.pprint(allBranch)
                         torch.save(allBranch, outputName)
                         print("Total:", timeTotal, "Read:", timeRead, round((timeRead/timeTotal)*100), "Encode:", timeEncode, round((timeEncode/timeTotal)*100), "Predict:", timePredict, round((timePredict/timeTotal)*100))
+                        exit()
                 print(correct,total, 100*correct/total)
             except Exception as e:
                 print("ERROR" ,e)
@@ -420,12 +423,13 @@ def main(outputName, mode, bench, trace, overwrite='False'):
                     timePredict += timeEnd - timeStart
                     outputTrace.write(str(ipH2P)+" "+str(int(prediction))+"\n")
                     timeTotal += time.time() - timeTotalStart                    
-                    if(total%50000==0):
+                    if(total%5000==0):
                         print(correct,total, 100*correct/total)
                         p = pprint.PrettyPrinter()
                         p.pprint(allBranch)
                         torch.save(allBranch, outputName)
                         print("Total:", timeTotal, "Read:", timeRead, round((timeRead/timeTotal)*100), "Encode:", timeEncode, round((timeEncode/timeTotal)*100), "Predict:", timePredict, round((timePredict/timeTotal)*100))
+                        exit()
                 print(correct,total, 100*correct/total)
             except Exception as e:
                 print("ERROR" ,e)
