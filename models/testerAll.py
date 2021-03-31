@@ -272,7 +272,7 @@ def main(outputName, mode, bench, trace, overwrite='False'):
             try:
                 history =  torch.zeros((1,200), dtype=torch.float64) 
                 historyDq = deque([0]*200)
-                while True:
+                while True:                    
                     timeTotalStart=time.time()
                     timeStart = time.time()                                
                     line = fp.readline()
@@ -314,9 +314,8 @@ def main(outputName, mode, bench, trace, overwrite='False'):
                     historyDq.appendleft(encodedPC)                    
                     timeEnd = time.time()
                     timeEncode += timeEnd - timeStart                                                                          
-                    timeTotal += time.time() - timeTotalStart                    
-                    if(total%1000000==0):
-                        print(correct,total, 100*correct/total)
+                    timeTotal += time.time() - timeTotalStart                                        
+                    if(total%1000000==1):                        
                         p = pprint.PrettyPrinter()
                         p.pprint(allBranch)
                         torch.save(allBranch, outputName)
@@ -350,7 +349,7 @@ def main(outputName, mode, bench, trace, overwrite='False'):
                             for line in fp:
                                 if "--- H2P ---" in line or "\n"==line or line.startswith("Warmup"):                    
                                     break
-                            if(total%500000==0):
+                            if(total%500000==1):
                                 print(skip, total)
                             total+=1
                         for branch in allBranch:
