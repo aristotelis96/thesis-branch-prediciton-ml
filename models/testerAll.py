@@ -349,7 +349,7 @@ def main(outputName, mode, bench, trace, overwrite='False'):
                             for line in fp:
                                 if "--- H2P ---" in line or "\n"==line or line.startswith("Warmup"):                    
                                     break
-                            if(total%500000==1):
+                            if(total%1000000==1):
                                 print(skip, total)
                             total+=1
                         for branch in allBranch:
@@ -421,7 +421,7 @@ def main(outputName, mode, bench, trace, overwrite='False'):
                     timePredict += timeEnd - timeStart
                     outputTrace.write(str(ipH2P)+" "+str(int(prediction))+"\n")
                     timeTotal += time.time() - timeTotalStart                    
-                    if(total%1000000==0):
+                    if(total%1000000==1):
                         print(correct,total, 100*correct/total)
                         p = pprint.PrettyPrinter()
                         p.pprint(allBranch)
