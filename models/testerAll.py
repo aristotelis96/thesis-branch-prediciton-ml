@@ -321,7 +321,6 @@ def main(outputName, mode, bench, trace, overwrite='False'):
                         p.pprint(allBranch)
                         torch.save(allBranch, outputName)
                         print("Total:", timeTotal, "Read:", timeRead, round((timeRead/timeTotal)*100), "Encode:", timeEncode, round((timeEncode/timeTotal)*100), "Predict:", timePredict, round((timePredict/timeTotal)*100))
-                        exit()
                 print(correct,total, 100*correct/total)
             except Exception as e:
                 print("ERROR" ,e)
@@ -429,7 +428,6 @@ def main(outputName, mode, bench, trace, overwrite='False'):
                         p.pprint(allBranch)
                         torch.save(allBranch, outputName)
                         print("Total:", timeTotal, "Read:", timeRead, round((timeRead/timeTotal)*100), "Encode:", timeEncode, round((timeEncode/timeTotal)*100), "Predict:", timePredict, round((timePredict/timeTotal)*100))
-                        exit()
                 print(correct,total, 100*correct/total)
             except Exception as e:
                 print("ERROR" ,e)
