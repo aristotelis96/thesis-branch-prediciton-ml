@@ -9,6 +9,10 @@ import readRegression
 from readRegression import BranchDataset
 import os
 import sys
+from math import ceil, floor
+from branchnet import model as BranchNetModel
+import yaml
+
 
 class TwoLayerFullPrecisionBPCNN(nn.Module):
     def __init__(self, tableSize=256, numFilters=2, historyLen=200):
@@ -45,24 +49,28 @@ device_idx = 0
 device = torch.device("cuda:"+str(device_idx) if torch.cuda.is_available() else "cpu")
 #device = torch.device("cpu")
 
-def main(branch):
+def main(branch, benchmark="ERROR"):
     ## Parameters ##
     tableSize = 256
     numFilters = 2
     historyLen = 200
 
     # learning Rate
-    learning_rate = 1e-3
+    learning_rate = 2e-3
 
     # Load a checkpoint?
     ContinueFromCheckpoint = False
 
     # Epoch
     epochStart = 0
-    epochEnd = 40
+    epochEnd = 20
 
     ## Model 
-    model = TwoLayerFullPrecisionBPCNN(tableSize=tableSize, numFilters=numFilters, historyLen=historyLen).to(device)
+    #model = TwoLayerFullPrecisionBPCNN(tableSize=tableSize, numFilters=numFilters, historyLen=historyLen).to(device)
+    model = BranchNetModel.BranchNet(yaml.safe_load(open("./branchnet/configs/tarsa.yaml")),BranchNetModel.BranchNetTrainingPhaseKnobs()).to(device)
+    pc_bits = 7
+    hash_dir = True
+
 
     print(model)
     ## TRAIN/TEST DATALOADER
@@ -70,24 +78,13 @@ def main(branch):
     paramsTrain = {'batch_size': 64,
             'shuffle': True,
             'num_workers': 2}
-    paramsValid = {'batch_size': 5000,
+    paramsValid = {'batch_size': 4096,
             'shuffle': False,
             'num_workers': 2}
 
-    # Benchmark
-    input_bench = ["600.perlbench_s-210B.champsimtrace.xz._.dataset_random.txt.gz"]
-    input_bench = ["541.leela_medium-13-133B.champsimtrace.xz._.dataset_random.txt.gz"]
-    startSample, endSample = 100, 400
-    ratio = 0.75
-    encodePCList=True
-    loadPt=True
-    inputDescription = '1hot matrix, 256*200. 1 at the position of the encoded PC with Taken/NotTaken or 0 otherwise'
-
-
-
     ##
     ## Optimize 
-    criterion = nn.MSELoss()
+    criterion = nn.MSELoss()    
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=learning_rate/10)
 
     total_Train_loss = []
@@ -111,24 +108,15 @@ def main(branch):
             print("STARTING TRAINING WITHOUT LOADING FROM CHECKPOINT FROM EPOCH 0")        
 
 
-    print("Loading TrainDataset")
-    print("Loading ValidationDataset")
-    if(loadPt):
-        train = torch.load("./specificBranch/531.deepsjeng/datasets/"+str(branch)+".pt")    
-        valid = torch.chunk(train, 200, dim=0)[0]
-        #valid = torch.load("./600_mytraces_200K.pt")  
-        #valid =  torch.chunk(valid, 20, dim=0)[0]
-        #valid = torch.load("./NewValidation.pt")
-    else:
-        train, valid = readRegression.readFileList(input_bench, startSample,endSample, ratio=ratio)
-        #torch.save(train, "train_600_210B_600K")
-        #torch.save(valid, "valid_600_210B_200K")
-
-    training_set, validation_set = BranchDataset(train, encodePCList=encodePCList), BranchDataset(valid, encodePCList=encodePCList)
-
+    total = torch.load("./specificBranch/"+benchmark+"/datasets/"+str(branch)+".pt")        
+    
+    totalDataset = BranchDataset(total, encodePCList=encodePCList, historyLen=historyLen, pc_bits=pc_bits, hash_dir=hash_dir)
+    #split into train and valid set using ratio 
+    splitRatio = [0.95, 0.05]
+    training_set, validation_set = torch.utils.data.random_split(totalDataset, [ceil(len(total)*splitRatio[0]), floor(len(total)*splitRatio[1])])#BranchDataset(train, encodePCList=encodePCList), BranchDataset(valid, encodePCList=encodePCList)    
+    #create dataloaders
     train_loader = DataLoader(training_set, **paramsTrain)
     valid_loader = DataLoader(validation_set, **paramsValid)
-
 
     #TRAINING
     now = time.time()
@@ -142,15 +130,13 @@ def main(branch):
             correct = 0.0
             for i, (X, labels) in enumerate(train_loader):
                 model.train() 
-                
                 X = X.to(device)
                 labels = labels.to(device)
-
+                
                 optimizer.zero_grad()
-                outputs = model(X.float())
-
-                loss = criterion(outputs, labels.float()) 
-
+                outputs = model(X.long())
+                
+                loss = criterion(outputs, labels.float())                 
                 
 
                 loss.backward()
@@ -158,14 +144,14 @@ def main(branch):
                 optimizer.step()
                 # print statistics
                 running_loss += loss.item()
-                correct += float((torch.round(outputs.cpu()) == labels.cpu()).sum())
+                correct += float((torch.sign(outputs.cpu()) == labels.cpu()).sum())
             train_acc = correct/float(len(training_set))
             train_loss = running_loss/float(len(train_loader))
             total_Train_accuracy.append(train_acc)
             total_Train_loss.append(train_loss)
             print("Epoch: ", epoch, "train loss:", train_loss, " acc:", train_acc)
-            #if(correct/float(len(training_set))>0.99):
-                #break
+            if(correct/float(len(training_set))>0.99):
+                break
             correct = 0
             for X_val, Validlabels in valid_loader:
                 model.eval() 
@@ -173,13 +159,13 @@ def main(branch):
                 X_val = X_val.to(device)
                 Validlabels = Validlabels.to(device)
 
-                outputs = model(X_val.float())
+                outputs = model(X_val.long())
 
-                loss = criterion(outputs, Validlabels.long())
+                loss = criterion(outputs, Validlabels.float())
 
                 loss_values.append(loss.item())    
             
-                correct += (torch.round(outputs.cpu()) == Validlabels.cpu()).sum()
+                correct += (torch.sign(outputs.cpu()) == Validlabels.cpu()).sum()
             epochLoss = float(sum(loss_values))/float(len(valid_loader))
             total_Validation_loss.append(epochLoss)
 
@@ -205,7 +191,7 @@ def main(branch):
                     'total_Validation_loss': total_Validation_loss,
                     'total_Train_loss': total_Train_loss,
                     'total_Train_accuracy': total_Train_accuracy
-                }, "./specificBranch/531.deepsjeng/models/CNN/CNN"+str(branch)+".pt")
+                }, "./specificBranch/"+benchmark+"/models/BranchNet/CNN"+str(branch)+".pt")
         except Exception as e:
             print("Error occured, reloading model from previous iteration and skipping epoch increase")
             print(e)
@@ -226,9 +212,13 @@ def main(branch):
     print("Finish")
 
 if __name__ == "__main__":
-    branches = os.listdir('./specificBranch/531.deepsjeng/datasets')
+    benchmark=sys.argv[1]
+    branches = os.listdir('./specificBranch/'+benchmark+'/datasets')
     branches = [int(x[:-3]) for x in branches]
+    oldbranches = os.listdir("./specificBranch/"+benchmark+"/models/BranchNet")
+    # for branch in oldbranches:
+    #    if int(branch[3:-3]) in branches: branches.remove(int(branch[3:-3]))            
     for branch in branches:
         print("Now training for branch:", branch)
-        main(branch)
+        main(branch, benchmark=benchmark)
 
