@@ -4,3 +4,4 @@ __pycache__
 /weights-and-simpoints-speccpu
 /models/specificBranch
 /models/oldstuff
+/models/branchnet

@@ -141,14 +141,14 @@ class RNNLayer(nn.Module):
         return self.softmax(out)
 
 class Encoder():
-    def __init__(self, pc_bits=7, hash_dir=False):
+    def __init__(self, pc_bits=7, concatenate_dir=False):
         self.pc_bits = pc_bits
-        self.hash_dir = hash_dir
+        self.concatenate_dir = concatenate_dir
     
     def encode(self, pc, direction):
         pc = int(pc)
         pc = (pc & (2**self.pc_bits - 1))<< 1
-        if(self.hash_dir):
+        if(self.concatenate_dir):
             return pc+int(direction)
         else:
             return pc
@@ -159,13 +159,13 @@ device = torch.device("cuda:"+str(device_idx) if torch.cuda.is_available() else 
 model = None
 allBranch = {}
 
-def merger(path, trace):
+def merger(modelType, trace):
     ### Merge and remove files
     bench = trace.split("_ref")[0]
     benchPath = "../Datasets/myTraces/"+bench+"/"+ trace
-    finalPath = path
-    finalFile = gzip.open(finalPath+trace, 'wt')
-    brs = os.listdir(finalPath+trace.split(".champsimtrace")[0])
+    finalPath = "specificBranch/{}/predictionTraces/{}".format(bench, modelType)
+    finalFile = gzip.open("{}/{}".format(finalPath, trace), 'wt')
+    brs = os.listdir("{}/{}".format(finalPath, trace.split(".champsimtrace")[0]))
     brsDict = {
         int(br[:-3]):
         gzip.open(finalPath+"/"+trace.split(".champsimtrace")[0]+"/"+br, 'rt')
@@ -180,14 +180,17 @@ def merger(path, trace):
             if ip in brsDict.keys():
                 newline = brsDict[ip].readline()
                 _ = finalFile.write(newline)
+    for br in brsDict:
+        brsDict[br].close()
     for br in brs:
-        os.remove(finalPath+trace.split(".champsimtrace")[0]+"/"+br)
-    os.rmdir(finalPath+trace.split(".champsimtrace")[0])
+        os.remove("{}/{folderName}/{branchPt}".format(
+            finalPath, 
+            folderName=trace.split(".champsimtrace")[0], 
+            branchPt=br))
+    os.rmdir("{}/{}".format(finalPath, trace.split(".champsimtrace")[0]))
+    finalFile.close()
 
-def main(outputName, mode, bench, trace, overwrite='False'):
-    ## CNN or LSTM
-    mode = mode ## SOOOS REMEMBER TO CHANGE READING SEE LINE: 236    
-    
+def main(outputName, mode, bench, trace, overwrite='False'):    
     
     ## GPU/CPU ##
     device = torch.device("cuda:"+str(device_idx) if torch.cuda.is_available() else "cpu")
@@ -198,7 +201,7 @@ def main(outputName, mode, bench, trace, overwrite='False'):
     models = os.listdir(modelFolder)
     modelsDict = {}
     if (mode=="BranchNet"):        
-        encoder = Encoder(pc_bits=11,hash_dir=True)
+        encoder = Encoder(pc_bits=11,concatenate_dir=True)
         for modelN in models:
             historyLen = 582
             modelName = modelN
@@ -217,7 +220,7 @@ def main(outputName, mode, bench, trace, overwrite='False'):
             modelsDict[int(modelN[3:-3])] = model
         print(model)
     if (mode=="BranchNetTarsa"):
-        encoder = Encoder(pc_bits=7,hash_dir=True)
+        encoder = Encoder(pc_bits=7,concatenate_dir=True)
         for modelN in models:
             historyLen = 200
             modelName = modelN
@@ -236,7 +239,7 @@ def main(outputName, mode, bench, trace, overwrite='False'):
                 exit()
             modelsDict[int(modelN[3:-3])] = model
     if (mode=="CNN"):
-        encoder = Encoder(pc_bits=7,hash_dir=True)
+        encoder = Encoder(pc_bits=7,concatenate_dir=True)
         ## Parameters ##
         tableSize = 256
         numFilters = 2
@@ -325,297 +328,181 @@ def main(outputName, mode, bench, trace, overwrite='False'):
     timeEncode = 0
     timePredict = 0   
     timeTotal=0     
-    Path("./predictionTraces/"+bench+"/"+mode+"/"+trace.split(".champsimtrace")[0]).mkdir(parents=True, exist_ok=True)
+    Path("./specificBranch/{bench}/predictionTraces/{mode}/{trace}".format(
+        bench=bench,
+        mode=mode,
+        trace=trace.split(".champsimtrace")[0]
+    )).mkdir(parents=True, exist_ok=True)
+    
     outputTraceDict = {
         ip:
-        gzip.open("predictionTraces/"+bench+"/"+mode+"/"+trace.split(".champsimtrace")[0]+"/"+str(ip)+".gz", 'wt')
+        gzip.open("./specificBranch/{bench}/predictionTraces/{mode}/{trace}/{PC}.gz".format(
+            bench=bench,
+            mode=mode,
+            trace=trace.split(".champsimtrace")[0]
+            PC=str(ip)
+            ), 'wt')
         for ip in modelsDict.keys()
     }
     IPsToPredict = list(modelsDict.keys())
     #first line should contain ips predictions     
     # branches that contain "all branches "
-    if "allBranches" in trace: 
-        with gzip.open(benchPath, 'rt') as fp:
-            try:                
-                batchSize = 4096
-                batchDict = {
-                    ip:
-                    {   'batch':torch.zeros((batchSize,historyLen),dtype=torch.float64,device=device),
-                        'labels': [0]*batchSize,
-                        'batchCounter':0
-                    }
-                    for ip in modelsDict.keys()}                                
-                for ip in modelsDict.keys():                    
-                        allBranch[ip] = {'total': 1, 'correct' : 0, 'acc': 0}                        
-                #ips = [0]*batchSize#torch.zeros((batchSize,1), dtype=torch.float64)
-                #labelsDict = {ip: for ip in batchDict.keys()}#torch.zeros((batchSize), dtype=torch.float64)
-                #history =  torch.zeros((historyLen), dtype=torch.float64,device=device) 
-                historyDq = deque([0]*historyLen)
-                #batchCounters = {ip:0 for ip in batchDict.keys()}
-                while True:
-                    timeTotalStart=time.time()
-                    timeStart = time.time()                                
-                    line = fp.readline()
-                    [ipFloat, label] = np.float64(line.split(" "))     
-                    ip = int(ipFloat)                    
-                    timeRead += time.time()-timeStart
-                    #prediction first if ip in dict of branchnets                    
-                    timeStart = time.time()                                
-                    if(ip in modelsDict):                
-                        total+=1 
-                        allBranch[ip]['total']+=1
-                        
-                        batchCounter = batchDict[ip]['batchCounter']
-                        # history = torch.tensor(historyDq).unsqueeze(dim=0)
-                        batchDict[ip]['batch'][batchCounter] = torch.tensor(historyDq).unsqueeze(dim=0)#history.detach().clone()                        
-                        batchDict[ip]['labels'][batchCounter] = label
-                        batchDict[ip]['batchCounter']+=1                                   
-                        if(batchDict[ip]['batchCounter'] == batchSize):                             
-                            batchDict[ip]['batchCounter']  = 0
-                            prediction = 2.0   
-                            if(mode=="BranchNetTarsa" or mode=="BranchNet"):
-                                prediction = torch.sign(modelsDict[ip](batchDict[ip]['batch'].long())) 
-                                #change -1 to 0 by applying relu
-                                torch.nn.functional.relu(prediction, inplace=True)
-                            elif(mode=="CNN"):
-                                prediction = torch.round(modelsDict[ip](batchDict[ip]['batch'].float()))
-                            elif (mode=="LSTM"):
-                                prediction = (modelsDict[ip](batchDict[ip]['batch'].float()).argmax(axis=1).cpu())
-                            elif (mode=='Transformer'):
-                                prediction = (modelsDict[ip](batchDict[ip]['batch'].float()).argmax(axis=1).cpu())                               
-                            #predictionList = prediction.tolist()                                 
-                            # for i in range(batchSize):                        
-                            #     if(predictionList[i] == batchDict[ip]['labels'][i]):
-                            results = prediction == torch.tensor(batchDict[ip]['labels'], device=device)                            
-                            resSum = int(results.sum())    
-                            correct+=resSum
-                            allBranch[ip]['correct']+=resSum
-                            allBranch[ip]['acc'] = allBranch[ip]['correct']/allBranch[ip]['total']                                            
-                            predictionList = prediction.tolist()                                                        
-                            for pred in predictionList:
-                                outputTraceDict[ip].write(str(ip)+" "+str(int(pred))+"\n")      
-                            del results    
-                            del prediction
-                        torch.cuda.empty_cache()                                             
-                        
-                    timeEnd = time.time()
-                    timePredict += timeEnd - timeStart
-                    #update history tensor                        
-                    #encode ip using encoder class
-                    timeStart = time.time()                       
-                    encodedPC = encoder.encode(ip, label)
-                    historyDq.pop()
-                    historyDq.appendleft(encodedPC)
-                    timeEnd = time.time()
-                    timeEncode += timeEnd - timeStart                                                                          
-                    timeTotal += time.time() - timeTotalStart                                
-                    if(total%100000==0):                                               
-                        ## Calculate remaining batches                        
-                        for ip in batchDict:
-                            #batchDict[ip]['batch'] = batchDict[ip]['batch'][:batchDict[ip]['batchCounter']-1]
-                            #batchDict[ip]['labels'] = batchDict[ip]['labels'][:batchDict[ip]['batchCounter']-1]
-                            batchCounter = batchDict[ip]['batchCounter']
-                            batchDict[ip]['batchCounter']  = 0
-                            prediction = 2.0                                                           
-                            if(mode=="BranchNetTarsa" or mode=="BranchNet"):                            
-                                prediction = torch.sign(modelsDict[ip](batchDict[ip]['batch'].long()).cpu())
-                                torch.nn.functional.relu(prediction, inplace=True)
-                            elif(mode=="CNN"):
-                                prediction = torch.round(modelsDict[ip](batchDict[ip].float()))
-                            elif (mode=="LSTM"):
-                                prediction = (modelsDict[ip](batchDict[ip].float()).argmax(axis=1).cpu())
-                            elif (mode=='Transformer'):
-                                prediction = (modelsDict[ip](batchDict[ip].float()).argmax(axis=1).cpu())                               
-                            #predictionList = prediction.tolist()                                 
-                            # for i in range(batchDict[ip]['batch'].size(0)):
-                            #     if(predictionList[i] == batchDict[ip]['labels'][i]):
-                            results = torch.narrow(prediction == torch.tensor(batchDict[ip]['labels']), 0, 0, batchCounter)                
-                            resSum = int(results.sum())
-                            correct+=resSum
-                            allBranch[ip]['correct']+=resSum
-                            allBranch[ip]['acc'] = allBranch[ip]['correct']/allBranch[ip]['total']
-                            predictionList = torch.narrow(prediction, 0, 0, batchCounter).tolist()
-                            del results
-                            del prediction
-                            for prediction in predictionList:
-                                outputTraceDict[ip].write(str(ip)+" "+str(int(prediction))+"\n")  
-                                          
-                        total+=1
-                        print(correct,total, 100*correct/total)
-                        p = pprint.PrettyPrinter()
-                        p.pprint(allBranch)
-                        torch.save(allBranch, outputName)
-                        print("Total:", timeTotal, "Read:", timeRead, round((timeRead/timeTotal)*100), "Encode:", timeEncode, round((timeEncode/timeTotal)*100), "Predict:", timePredict, round((timePredict/timeTotal)*100))
-                print(correct,total, 100*correct/total)
-            except Exception as e:
-                for ip in batchDict:
-                    #batchDict[ip]['batch'] = batchDict[ip]['batch'][:batchDict[ip]['batchCounter']-1]
-                    #batchDict[ip]['labels'] = batchDict[ip]['labels'][:batchDict[ip]['batchCounter']-1]
+    with gzip.open(benchPath, 'rt') as fp:
+        try:                
+            batchSize = 4096
+            batchDict = {
+                ip:
+                {   'batch':torch.zeros((batchSize,historyLen),dtype=torch.float64,device=device),
+                    'labels': [0]*batchSize,
+                    'batchCounter':0
+                }
+                for ip in modelsDict.keys()}                                
+            for ip in modelsDict.keys():                    
+                    allBranch[ip] = {'total': 1, 'correct' : 0, 'acc': 0}                        
+            #ips = [0]*batchSize#torch.zeros((batchSize,1), dtype=torch.float64)
+            #labelsDict = {ip: for ip in batchDict.keys()}#torch.zeros((batchSize), dtype=torch.float64)
+            #history =  torch.zeros((historyLen), dtype=torch.float64,device=device) 
+            historyDq = deque([0]*historyLen)
+            #batchCounters = {ip:0 for ip in batchDict.keys()}
+            while True:
+                timeTotalStart=time.time()
+                timeStart = time.time()                                
+                line = fp.readline()
+                [ipFloat, label] = np.float64(line.split(" "))     
+                ip = int(ipFloat)                    
+                timeRead += time.time()-timeStart
+                #prediction first if ip in dict of branchnets                    
+                timeStart = time.time()                                
+                if(ip in modelsDict):                
+                    total+=1 
+                    allBranch[ip]['total']+=1
+                    
                     batchCounter = batchDict[ip]['batchCounter']
-                    batchDict[ip]['batchCounter']  = 0
-                    prediction = 2.0                                                           
-                    if(mode=="BranchNetTarsa" or mode=="BranchNet"):                            
-                        prediction = torch.sign(modelsDict[ip](batchDict[ip]['batch'].long()).cpu())
-                        torch.nn.functional.relu(prediction, inplace=True)
-                    elif(mode=="CNN"):
-                        prediction = torch.round(modelsDict[ip](batchDict[ip].float()))
-                    elif (mode=="LSTM"):
-                        prediction = (modelsDict[ip](batchDict[ip].float()).argmax(axis=1).cpu())
-                    elif (mode=='Transformer'):
-                        prediction = (modelsDict[ip](batchDict[ip].float()).argmax(axis=1).cpu())                               
-                    #predictionList = prediction.tolist()                                 
-                    # for i in range(batchDict[ip]['batch'].size(0)):
-                    #     if(predictionList[i] == batchDict[ip]['labels'][i]):
-                    results = torch.narrow(prediction == torch.tensor(batchDict[ip]['labels']), 0, 0, batchCounter)                
-                    resSum = int(results.sum())
-                    correct+=resSum
-                    allBranch[ip]['correct']+=resSum
-                    allBranch[ip]['acc'] = allBranch[ip]['correct']/allBranch[ip]['total']
-                    predictionList = torch.narrow(prediction, 0, 0, batchCounter).tolist()
-                    del results
-                    del prediction
-                    for prediction in predictionList:
-                        outputTraceDict[ip].write(str(ip)+" "+str(int(prediction))+"\n")  
-                print("ERROR" ,e)
-                print(correct,total, 100*correct/total)
-                p.pprint(allBranch)
-                torch.save(allBranch, outputName)
-    else:
-        with gzip.open(benchPath, 'rt') as fp:      
-            #model.eval()
-            try:        
-                for line in fp:
-                    if "--- H2P ---" not in line:                    
-                        continue
-                    break
-                if(overwrite!='True'):
-                    # check if output file exists
-                    if(os.path.isfile(outputName)):
-                        # if yes, count total branches you need to skip
-                        skip=0
-                        allBranch = torch.load(outputName)
-                        for branch in allBranch:
-                            skip+=allBranch[branch]['total']
-                        while total<skip:                        
-                            line = fp.readline()            
-                            if "--- H2P ---" in line or "\n"==line or line.startswith("Warmup"):                    
-                                continue
-                            for line in fp:
-                                if "--- H2P ---" in line or "\n"==line or line.startswith("Warmup"):                    
-                                    break
-                            if(total%500000==0):
-                                print(skip, total)
-                            total+=1
-                        for branch in allBranch:
-                            correct+=allBranch[branch]['correct']
-                # when done start overwriting outputName file                        
-                overwrite='True'
-                #continue execution                
-                temp = [[0]*200]
-                batchSize = 8192
-                batchDict = {
-                    ip:
-                    {   'batch':torch.zeros((batchSize,200),dtype=torch.float64,device=device),
-                        'labels': [0]*batchSize,
-                        'batchCounter':0
-                    }
-                    for ip in modelsDict.keys()}
-                while True:
-                    timeTotalStart=time.time()
-                    timeStart = time.time()                
-                    # if (mode=="CNN" or mode=="BranchNet"): sample = torch.zeros((1,200), dtype=torch.float64) 
-                    # if(mode=="LSTM"): sample = torch.zeros((1,200,2), dtype=torch.float64) #LSTM
-                    # if (mode=='Transformer'): sample = torch.zeros((1,200,1), dtype=torch.float64) 
-                    line = fp.readline()            
-                    if "Reached end of trace" in line or "--- H2P ---" in line or "\n"==line or line.startswith("Warmup"):                    
-                        continue
-                    timeEnd = time.time()
-                    timeRead += timeEnd - timeStart
-                    [ipH2P, label] = np.float64(line.split(" "))                
-                    history=0            
-                    timeStart = time.time()                
-                    for line in fp:
-                        if "--- H2P ---" in line or "Reached end of trace" in line or "\n"==line or line.startswith("Warmup"):                    
-                            batchCounter = batchDict[ipH2P]['batchCounter']
-                            batchDict[ipH2P]['batch'][batchCounter] = torch.tensor(temp, dtype=torch.float64, device=device).clone().detach()
-                            batchDict[ipH2P]['labels'][batchCounter] = label
-                            batchDict[ipH2P]['batchCounter']+=1            
-                            break
-                        temp[0][history] = int(line)    
-                        history+=1          
-                    timeEnd = time.time()
-                    timeEncode += timeEnd - timeStart  
-                    ipH2P = int(ipH2P)                
-                    timeStart = time.time()
-                    if(ipH2P in modelsDict):
-                        if ipH2P not in allBranch:
-                            allBranch[ipH2P] = {'total': 1, 'correct' : 0, 'acc': 0}
-                        else:
-                            allBranch[ipH2P]['total']+=1
-                        if(batchDict[ipH2P]['batchCounter'] == batchSize):
-                            batchDict[ipH2P]['batchCounter']  = 0
-                            prediction = 2.0   
-                            
-                            if(mode=="BranchNetTarsa"):                                
-                                prediction = torch.round(modelsDict[ipH2P](batchDict[ipH2P]['batch'].long().to(device)))
-                            elif(mode=="CNN"):
-                                prediction = torch.round(modelsDict[ipH2P](batchDict[ipH2P]['batch'].float()))
-                            elif (mode=="LSTM"):
-                                prediction = (modelsDict[ipH2P](batchDict[ipH2P]['batch'].float()).argmax(axis=1).cpu())
-                            elif (mode=='Transformer'):
-                                prediction = (modelsDict[ipH2P](batchDict[ipH2P]['batch'].float()).argmax(axis=1).cpu())
-                            predictionList = prediction.tolist() 
-                            for i in range(batchSize):
-                                if(predictionList[i] == batchDict[ipH2P]['labels'][i]):                                
-                                    correct+=1
-                                    allBranch[ipH2P]['correct']+=1
-                                    allBranch[ipH2P]['acc'] = allBranch[ipH2P]['correct']/allBranch[ipH2P]['total']                
-                        total+=1
-                    timeEnd = time.time()
-                    timePredict += timeEnd - timeStart
-                    outputTrace.write(str(ipH2P)+" "+str(int(prediction))+"\n")
-                    timeTotal += time.time() - timeTotalStart                    
-                    if(total%50000==0):
-                        ## Calculate remaining batches
-                        for ip in batchDict.keys():
-                            batchDict[ip]['batch'] = batchDict[ip]['batch'][:batchDict[ip]['batchCounter']]
-                            batchDict[ip]['labels'] = batchDict[ip]['labels'][:batchDict[ip]['batchCounter']]
-                            batchDict[ip]['batchCounter']  = 0
-                            prediction = 2.0   
-                            if(mode=="BranchNetTarsa"):
-                                prediction = torch.round(modelsDict[ip](batchDict[ip]['batch'].long()))
-                            elif(mode=="CNN"):
-                                prediction = torch.round(modelsDict[ip](batchDict[ip].float()))
-                            elif (mode=="LSTM"):
-                                prediction = (modelsDict[ip](batchDict[ip].float()).argmax(axis=1).cpu())
-                            elif (mode=='Transformer'):
-                                prediction = (modelsDict[ip](batchDict[ip].float()).argmax(axis=1).cpu())                               
-                            predictionList = prediction.tolist()                                 
-                            for i in range(batchDict[ip]['batch'].size(0)):
-                                if(predictionList[i] == batchDict[ip]['labels'][i]):
-                                    correct+=1
-                                    allBranch[ip]['correct']+=1
-                                    allBranch[ip]['acc'] = allBranch[ip]['correct']/allBranch[ip]['total']   
-                        print(correct,total, 100*correct/total)
-                        p = pprint.PrettyPrinter()
-                        p.pprint(allBranch)
-                        torch.save(allBranch, outputName)
-                        print("Total:", timeTotal, "Read:", timeRead, round((timeRead/timeTotal)*100), "Encode:", timeEncode, round((timeEncode/timeTotal)*100), "Predict:", timePredict, round((timePredict/timeTotal)*100))
-                print(correct,total, 100*correct/total)
-            except Exception as e:
-                print("ERROR" ,e)
-                print(correct,total, 100*correct/total)
-                p.pprint(allBranch)
-                torch.save(allBranch, outputName)
-        outputTrace.close()
+                    # history = torch.tensor(historyDq).unsqueeze(dim=0)
+                    tmp = np.flip(np.array(historyDq)).copy()
+                    batchDict[ip]['batch'][batchCounter] = torch.tensor(tmp).unsqueeze(dim=0)#history.detach().clone()                        
+                    batchDict[ip]['labels'][batchCounter] = label
+                    batchDict[ip]['batchCounter']+=1                                   
+                    if(batchDict[ip]['batchCounter'] == batchSize):                             
+                        batchDict[ip]['batchCounter']  = 0
+                        prediction = 2.0   
+                        if(mode=="BranchNetTarsa" or mode=="BranchNet"):
+                            prediction = torch.sign(modelsDict[ip](batchDict[ip]['batch'].long())) 
+                            #change -1 to 0 by applying relu
+                            torch.nn.functional.relu(prediction, inplace=True)
+                        elif(mode=="CNN"):
+                            prediction = torch.round(modelsDict[ip](batchDict[ip]['batch'].float()))
+                        elif (mode=="LSTM"):
+                            prediction = (modelsDict[ip](batchDict[ip]['batch'].float()).argmax(axis=1).cpu())
+                        elif (mode=='Transformer'):
+                            prediction = (modelsDict[ip](batchDict[ip]['batch'].float()).argmax(axis=1).cpu())                               
+                        #predictionList = prediction.tolist()                                 
+                        # for i in range(batchSize):                        
+                        #     if(predictionList[i] == batchDict[ip]['labels'][i]):
+                        results = prediction == torch.tensor(batchDict[ip]['labels'], device=device)                            
+                        resSum = int(results.sum())    
+                        correct+=resSum
+                        allBranch[ip]['correct']+=resSum
+                        allBranch[ip]['acc'] = allBranch[ip]['correct']/allBranch[ip]['total']                                            
+                        predictionList = prediction.tolist()                                                        
+                        for pred in predictionList:
+                            outputTraceDict[ip].write(str(ip)+" "+str(int(pred))+"\n")      
+                        del results    
+                        del prediction
+                    torch.cuda.empty_cache()                                             
+                    
+                timeEnd = time.time()
+                timePredict += timeEnd - timeStart
+                #update history tensor                        
+                #encode ip using encoder class
+                timeStart = time.time()                       
+                encodedPC = encoder.encode(ip, label)
+                historyDq.pop()
+                historyDq.appendleft(encodedPC)
+                timeEnd = time.time()
+                timeEncode += timeEnd - timeStart                                                                          
+                timeTotal += time.time() - timeTotalStart                                
+                if(total%100000==0):                                               
+                    ## Calculate remaining batches                        
+                    for ip in batchDict:
+                        #batchDict[ip]['batch'] = batchDict[ip]['batch'][:batchDict[ip]['batchCounter']-1]
+                        #batchDict[ip]['labels'] = batchDict[ip]['labels'][:batchDict[ip]['batchCounter']-1]
+                        batchCounter = batchDict[ip]['batchCounter']
+                        batchDict[ip]['batchCounter']  = 0
+                        prediction = 2.0                                                           
+                        if(mode=="BranchNetTarsa" or mode=="BranchNet"):                            
+                            prediction = torch.sign(modelsDict[ip](batchDict[ip]['batch'].long()).cpu())
+                            torch.nn.functional.relu(prediction, inplace=True)
+                        elif(mode=="CNN"):
+                            prediction = torch.round(modelsDict[ip](batchDict[ip].float()))
+                        elif (mode=="LSTM"):
+                            prediction = (modelsDict[ip](batchDict[ip].float()).argmax(axis=1).cpu())
+                        elif (mode=='Transformer'):
+                            prediction = (modelsDict[ip](batchDict[ip].float()).argmax(axis=1).cpu())                               
+                        #predictionList = prediction.tolist()                                 
+                        # for i in range(batchDict[ip]['batch'].size(0)):
+                        #     if(predictionList[i] == batchDict[ip]['labels'][i]):
+                        results = torch.narrow(prediction == torch.tensor(batchDict[ip]['labels']), 0, 0, batchCounter)                
+                        resSum = int(results.sum())
+                        correct+=resSum
+                        allBranch[ip]['correct']+=resSum
+                        allBranch[ip]['acc'] = allBranch[ip]['correct']/allBranch[ip]['total']
+                        predictionList = torch.narrow(prediction, 0, 0, batchCounter).tolist()
+                        del results
+                        del prediction
+                        for prediction in predictionList:
+                            outputTraceDict[ip].write(str(ip)+" "+str(int(prediction))+"\n")  
+                                        
+                    total+=1
+                    print(correct,total, 100*correct/total)
+                    p = pprint.PrettyPrinter()
+                    p.pprint(allBranch)
+                    torch.save(allBranch, outputName)
+                    print("Total:", timeTotal, "Read:", timeRead, round((timeRead/timeTotal)*100), "Encode:", timeEncode, round((timeEncode/timeTotal)*100), "Predict:", timePredict, round((timePredict/timeTotal)*100))
+            print(correct,total, 100*correct/total)
+        except Exception as e:
+            for ip in batchDict:
+                #batchDict[ip]['batch'] = batchDict[ip]['batch'][:batchDict[ip]['batchCounter']-1]
+                #batchDict[ip]['labels'] = batchDict[ip]['labels'][:batchDict[ip]['batchCounter']-1]
+                batchCounter = batchDict[ip]['batchCounter']
+                batchDict[ip]['batchCounter']  = 0
+                prediction = 2.0                                                           
+                if(mode=="BranchNetTarsa" or mode=="BranchNet"):                            
+                    prediction = torch.sign(modelsDict[ip](batchDict[ip]['batch'].long()).cpu())
+                    torch.nn.functional.relu(prediction, inplace=True)
+                elif(mode=="CNN"):
+                    prediction = torch.round(modelsDict[ip](batchDict[ip].float()))
+                elif (mode=="LSTM"):
+                    prediction = (modelsDict[ip](batchDict[ip].float()).argmax(axis=1).cpu())
+                elif (mode=='Transformer'):
+                    prediction = (modelsDict[ip](batchDict[ip].float()).argmax(axis=1).cpu())                               
+                #predictionList = prediction.tolist()                                 
+                # for i in range(batchDict[ip]['batch'].size(0)):
+                #     if(predictionList[i] == batchDict[ip]['labels'][i]):
+                results = torch.narrow(prediction == torch.tensor(batchDict[ip]['labels']), 0, 0, batchCounter)                
+                resSum = int(results.sum())
+                correct+=resSum
+                allBranch[ip]['correct']+=resSum
+                allBranch[ip]['acc'] = allBranch[ip]['correct']/allBranch[ip]['total']
+                predictionList = torch.narrow(prediction, 0, 0, batchCounter).tolist()
+                del results
+                del prediction
+                for prediction in predictionList:
+                    outputTraceDict[ip].write(str(ip)+" "+str(int(prediction))+"\n")  
+            print("ERROR" ,e)
+            print(correct,total, 100*correct/total)
+            p.pprint(allBranch)
+            torch.save(allBranch, outputName)
     end = time.time()
     print("total time taken to check: ", end-now)        
+    # print("merging results")
+    
 if __name__ == '__main__':
     if(len(sys.argv) < 5):
         print("usage: script 'outputName', MODE:LSTM/CNN, benchmark, trace, overwrite=true/false(default false)")
         exit()
     # check to overwite output (default no)    
-    overwrite='False'
+    overwrite='True'
     if (len(sys.argv) == 6):
         overwrite = sys.argv[5]
     main(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], overwrite=overwrite)
