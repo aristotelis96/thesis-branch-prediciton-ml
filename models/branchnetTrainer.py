@@ -1,11 +1,11 @@
 import torch
+from torch.functional import norm
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 import sys
 from torch.utils.data import DataLoader
 import time
-import readRegression
 from readRegression import BranchDataset
 import os
 import sys
@@ -13,73 +13,93 @@ from math import ceil, floor
 from branchnet import model as BranchNetModel
 from branchnet import dataset_loader as BranchNetDataset
 import yaml
-
-
-class TwoLayerFullPrecisionBPCNN(nn.Module):
-    def __init__(self, tableSize=256, numFilters=2, history_length=200):
-        super().__init__()
-        
-        #embed via identity matrix:
-        self.E = torch.eye(tableSize, dtype=torch.float32).to(device)
-        
-        #convolution layer, 1D in effect; Linear Layer
-        self.c1 = nn.Conv2d(tableSize, numFilters, (1,1))        
-        self.tahn = nn.Tanh()
-        self.l2 = nn.Linear(history_length*numFilters, 1)        
-        self.sigmoid2 = nn.Sigmoid()        
-
-    def forward(self, seq):
-        #Embed by expanding sequence of ((IP << 7) + dir ) & (255)
-        # integers into 1-hot history matrix during training
-        
-        #xFull = self.E[seq.data.type(torch.long)]
-        xFull = self.E[seq.data.long()]
-        xFull = torch.unsqueeze(xFull, 1)        
-        xFull = xFull.permute(0,3,1,2)#.to(device)
-        #xFull = xFull.reshape(len(xFull),16,16,200).to(device)
-        
-        h1 = self.c1(xFull)
-        h1a = self.tahn(h1)        
-        h1a = h1a.reshape(h1a.size(0),h1a.size(1)*h1a.size(3))
-        out = self.l2(h1a)        
-        out = self.sigmoid2(out)
-        return out
-
+import models 
+import numpy as np
 ## GPU/CPU ##
 device_idx = 0
 device = torch.device("cuda:"+str(device_idx) if torch.cuda.is_available() else "cpu")
 #device = torch.device("cpu")
 
 """ Trains a model on a branch using h5py Datasets """
-def Trainer(branch_pc, benchmark="ERROR", mode="BranchNet"):
-    ## Parameters ##
-    tableSize = 256
-    numFilters = 2
-    history_length = 582
-
+def Trainer(branch_pc, benchmark="ERROR", mode="BranchNet"):    
     # learning Rate
-    learning_rate = 2e-3
+    learning_rate = 1e-3
 
-    Training_steps = [1000, 1000, 1000] 
-    Validation_steps = [1000]
+    Training_steps = [2000, 1000, 1000] 
+    Validation_steps = [100]
 
     ## Model 
     mode = mode
-    #model = TwoLayerFullPrecisionBPCNN(tableSize=tableSize, numFilters=numFilters, history_length=history_length).to(device)
-    model = BranchNetModel.BranchNet(yaml.safe_load(open("./branchnet/configs/big.yaml")),BranchNetModel.BranchNetTrainingPhaseKnobs()).to(device)
-    pc_bits = 11
-    pc_hash_bits = 11
-    hash_dir = False
+    if "BranchNetTransformer" == mode:
+        ProblemType = "Regression"
+        history_length = 582
+        model = BranchNetModel.BranchNet(yaml.safe_load(open("./branchnet/configs/bigTransformer.yaml")),BranchNetModel.BranchNetTrainingPhaseKnobs()).to(device)
+        pc_bits = 11
+        pc_hash_bits = 11
+        hash_dir = False
+    if "CNN" == mode:
+        ProblemType = "Regression"
+        history_length = 200
+        tableSize = 256
+        numFilters = 2
+        model = models.TwoLayerFullPrecisionBPCNN(tableSize=tableSize, numFilters=numFilters, history_length=history_length).to(device)    
+        pc_bits = 7
+        pc_hash_bits = 7
+        hash_dir = False
+    if "BranchNetLSTM" == mode:
+        ProblemType = "Regression"
+        history_length=582
+        model = BranchNetModel.BranchNet(yaml.safe_load(open("./branchnet/configs/BranchNetLSTM.yaml")),BranchNetModel.BranchNetTrainingPhaseKnobs()).to(device)
+        pc_bits = 11
+        pc_hash_bits = 11
+        hash_dir = False
 
-
+    if "BranchNet" == mode:
+        ProblemType = "Regression"
+        history_length = 582
+        model = BranchNetModel.BranchNet(yaml.safe_load(open("./branchnet/configs/big.yaml")),BranchNetModel.BranchNetTrainingPhaseKnobs()).to(device)
+        pc_bits = 11
+        pc_hash_bits = 11
+        hash_dir = False
+    if "BranchNetTarsa" == mode:
+        ProblemType = "Regression"
+        history_length = 200
+        model = BranchNetModel.BranchNet(yaml.safe_load(open("./branchnet/configs/tarsa.yaml")),BranchNetModel.BranchNetTrainingPhaseKnobs()).to(device)
+        pc_bits = 7
+        pc_hash_bits = 7
+        hash_dir = False
+    if mode =="Transformer":
+        ProblemType = "Classification"
+        history_length = 200
+        pc_bits = 11
+        pc_hash_bits = 11
+        hash_dir = False
+        n_class = 32
+        num_layers = 1
+        normalization = False
+        input_dim = 32
+        rnn_layer = 'transformer'
+        model = models.RNNLayer(rnn_layer=rnn_layer, input_dim=input_dim, out_dim=n_class, num_layers=num_layers, pc_hash_bits=pc_hash_bits, normalization=normalization).to(device)
+    if mode=="LSTM":
+        ProblemType = "Regression"
+        history_length = 582
+        pc_bits = 11
+        pc_hash_bits = 11
+        hash_dir = False
+        n_class = 128
+        num_layers = 1
+        normalization = False
+        input_dim = 32
+        rnn_layer = 'lstm'
+        model = models.RNNLayer(rnn_layer=rnn_layer, input_dim=input_dim, out_dim=n_class, num_layers=num_layers, normalization=normalization).to(device)
     print(model)
     
     ## TRAIN/TEST DATALOADER
     # Parameters
-    paramsTrain = {'batch_size': 2048,
+    paramsTrain = {'batch_size': 128,
             'shuffle': True,
             'num_workers': 0}
-    paramsValid = {'batch_size': 512,
+    paramsValid = {'batch_size': 128,
             'shuffle': True,
             'num_workers': 0}
 
@@ -102,8 +122,15 @@ def Trainer(branch_pc, benchmark="ERROR", mode="BranchNet"):
 
     ## Optimize 
     criterion = nn.MSELoss()    
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=learning_rate/10)
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.2)
+    ## If transformer or lstm you need classification criterion
+    if ProblemType =="Classification":
+        # weighted classes
+        pos_weight = dataset.get_pos_weight()
+        weightClass = torch.tensor([pos_weight, 1/pos_weight], dtype=torch.float, device=device)
+        criterion = nn.CrossEntropyLoss(weight=weightClass)
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)#, weight_decay=learning_rate/10)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=0.5, gamma=0.2)
 
     total_Train_loss = []
     total_Train_accuracy = []
@@ -126,10 +153,13 @@ def Trainer(branch_pc, benchmark="ERROR", mode="BranchNet"):
                 X = X.to(device)
                 labels = labels.to(device)
                 
-                optimizer.zero_grad()
-                outputs = model(X.long())
-                
-                loss = criterion(outputs, labels.float())                 
+                optimizer.zero_grad()            
+                outputs = model(X.long())  
+                if ProblemType=="Classification":
+                    nn.functional.relu(labels, inplace=True)
+                    loss = criterion(outputs, labels.long())                 
+                else:
+                    loss = criterion(outputs, labels.float())                 
                 
 
                 loss.backward()
@@ -137,11 +167,22 @@ def Trainer(branch_pc, benchmark="ERROR", mode="BranchNet"):
                 optimizer.step()
                 # print statistics
                 running_loss += loss.item()
-                correct += float((torch.sign(outputs.cpu()) == labels.cpu()).sum())
+                if ProblemType=="Classification":
+                    correct += float((outputs.argmax(axis=1).cpu() == labels.cpu()).sum())
+                else:
+                    correct += float((torch.sign(outputs.cpu()) == labels.cpu()).sum())
                 # step increase
                 step += 1
                 if (step >= num_steps):
                     break 
+                if step % 100==0:
+                    train_acc = correct/float(step*train_loader.batch_size)
+                    train_loss = running_loss/float(step*train_loader.batch_size)
+                    print("Timestep: {} - Accuracy: {}% - Loss: {}".format(
+                        step,
+                        train_acc*100,
+                        train_loss
+                    ))
             scheduler.step()
      
         train_acc = correct/float(num_steps*train_loader.batch_size)
@@ -168,11 +209,18 @@ def Trainer(branch_pc, benchmark="ERROR", mode="BranchNet"):
 
                 outputs = model(X_val.long())
 
-                loss = criterion(outputs, Validlabels.float())
-
+                if ProblemType=="Classification":
+                    nn.functional.relu(Validlabels, inplace=True)
+                    loss = criterion(outputs, Validlabels.long())                 
+                else:
+                    loss = criterion(outputs, Validlabels.float())                 
+                
                 running_loss+=(loss.item())    
             
-                correct += (torch.sign(outputs.cpu()) == Validlabels.cpu()).sum()
+                if ProblemType=="Classification":
+                    correct += float((outputs.argmax(axis=1).cpu() == Validlabels.cpu()).sum())
+                else:
+                    correct += float((torch.sign(outputs.cpu()) == Validlabels.cpu()).sum())
                 # Step increase
                 step+=1
                 if step >= num_steps:
@@ -207,11 +255,16 @@ def Trainer(branch_pc, benchmark="ERROR", mode="BranchNet"):
     print("Finish")
 
 if __name__ == "__main__":
-    benchmark=sys.argv[1]
-    mode = sys.argv[2]
-    branches = os.listdir('./specificBranch/'+benchmark+'/datasets')
-    branches = [int(x[:-3]) for x in branches]
-    # oldbranches = os.listdir("./specificBranch/"+benchmark+"/models/BranchNet")
+    if(len(sys.argv)<3):
+        print("Trainer for a model and a benchmark.")
+        print("Usage ./script model benchmark")
+        exit()
+    mode = sys.argv[1]
+    benchmark=sys.argv[2]
+    branches = np.sort(np.load("specificBranch/{}/H2Ps{}.npy".format(benchmark, benchmark)))
+    outputPath = "./specificBranch/"+benchmark+"/models/"+mode
+    if not os.path.exists(outputPath): os.makedirs(outputPath)
+    # oldbranches = os.listdir("./specificBranch/"+benchmark+"/models/"+mode)
     # for branch in oldbranches:
     #     if int(branch[3:-3]) in branches: branches.remove(int(branch[3:-3]))            
     for branch in branches:
