@@ -20,6 +20,7 @@ import gc
 from collections import deque
 from models import TwoLayerFullPrecisionBPCNN, RNNLayer
 from readRegression import Encoder
+from math import floor
 
 device_idx = 0
 device = torch.device("cuda:"+str(device_idx) if torch.cuda.is_available() else "cpu")
@@ -58,10 +59,9 @@ def merger(modelType, trace):
     finalFile.close()
 
 def main(outputName, mode, bench, TracePath):    
-    
     ## GPU/CPU ##
     device = torch.device("cuda:"+str(device_idx) if torch.cuda.is_available() else "cpu")
-
+    torch.no_grad()
 
     # Name of pt model
     modelFolder = "./specificBranch/"+bench+"/models/"+mode+"/"
@@ -152,7 +152,7 @@ def main(outputName, mode, bench, TracePath):
             modelsDict[int(modelN[3:-3])] = model
 
     if (mode=="LSTM"):
-        ProblemType = "Regression"
+        ProblemType = "Regression"        
         encoder = Encoder(pc_bits=11,concatenate_dir=True)
         historyLen = 582
         ## Parameters ##
@@ -206,6 +206,26 @@ def main(outputName, mode, bench, TracePath):
                 exit()
             modelsDict[int(modelN[3:-3])] = model
     
+    # Find maximum Batch size
+    max = 2**16
+    min = 2
+    median = (max-min)/2 + min
+    while (max-min)>100:
+        try:
+            median = (max-min)/2 + min
+            print(max,min,median)
+            x = torch.randint(2**11,(int(median),582), device=torch.device('cpu'))
+            out = modelsDict[list(modelsDict.keys())[0]](x.to(device)        )
+            min = median
+            del x
+            del out
+            continue
+        except Exception as err:
+            print(err)
+            max = median
+    batchSize = floor(median)
+    print("Maximum possible batch size:", median)
+
     allBranch={}
     correct = 0
     total=1
@@ -240,7 +260,7 @@ def main(outputName, mode, bench, TracePath):
     # branches that contain "all branches "
     with gzip.open(TracePath, 'rt') as fp:
         try:                
-            batchSize = 1024
+            batchSize = batchSize
             batchDict = {
                 ip:
                 {   'batch':torch.zeros((batchSize,historyLen),dtype=torch.float64,device=torch.device('cpu')),
