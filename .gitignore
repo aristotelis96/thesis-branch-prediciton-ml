@@ -1,7 +1,7 @@
 /Datasets
 __pycache__
-/scalingResults
-/weights-and-simpoints-speccpu
-/models/specificBranch
-/models/oldstuff
-/models/branchnet
+/src/branchnet
+/src/outputs/*/models/*
+/src/outputs/*/predictionTraces/*
+/src/outputs/*/resultStats/*
+/src/utils
