@@ -1,6 +1,5 @@
 /Datasets
 __pycache__
-/src/branchnet
 /src/outputs/*/models/*
 /src/outputs/*/predictionTraces/*
 /src/outputs/*/resultStats/*
