@@ -394,9 +394,9 @@ if __name__ == '__main__':
     outputFolder = "./outputs/{}/resultStats/{}".format(bench, NeuralNetwork)
 
     if(platform.system()=="Windows"):
-        traceFolder = "C:/Users/Aristotelis/Desktop/diploma/Datasets/myTraces/{}".format(bench)
+        traceFolder = "path/to/Datasets/myTraces/{}".format(bench)
     elif(platform.system()=="Linux"):
-        traceFolder = "/local/avontz/myTraces/datasets/allBranches/{}".format(bench)
+        traceFolder = "/path/to/datasets/allBranches/{}".format(bench)
     
     tracesPaths = [
         "{}/{}".format(traceFolder, trace) for trace in os.listdir(traceFolder) if "ref" in trace

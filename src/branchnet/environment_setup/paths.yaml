@@ -1,0 +1,6 @@
+# Here you specify path to ChampSim's outputs
+branch_traces_dir: /path/to/datasets/allBranches  # Output with flags -collect_all_branches
+hard_brs_dir: /path/to/datasets/H2P               # Output files with identified H2P branches
+measure_H2P_dir: /path/to/H2P_AccuracyPerBranch   # Output of trace with flag -measure_H2P_accuracy
+ml_datasets_dir: /path/to/datasets/h5pyDatasets   # Output folder for h5py files
+

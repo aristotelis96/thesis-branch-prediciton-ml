@@ -19,7 +19,6 @@ from common import PATHS, BENCHMARKS_INFO
 
 TARGET_BENCHMARKS = ['505.mcf']
 PREDICTOR = 'TAGE8'
-HARD_BRS_FILE = 'top100'
 NUM_THREADS = 16
 PC_BITS = 11
 
@@ -82,7 +81,6 @@ def create_new_dataset(dataset_path, pcs, directions):
 def get_work_items():
     work_items = []    
     for benchmark in TARGET_BENCHMARKS:
-        # hard_brs = common.read_hard_brs(benchmark, HARD_BRS_FILE)
         hard_brs = common.read_hard_brs_from_accuracy_files(benchmark, PREDICTOR)
         traces_dir = '{}/{}'.format(PATHS['branch_traces_dir'], benchmark)
         datasets_dir = '{}/{}'.format(PATHS['ml_datasets_dir'], benchmark)
@@ -93,18 +91,6 @@ def get_work_items():
                 datasets_dir, trace.split(".champsimtrace")[0])
             work_items.append((trace_path, dataset_path, hard_brs))
         return work_items
-#        for inp_info in BENCHMARKS_INFO[benchmark]['inputs']:
-#            for simpoint_info in inp_info['simpoints']:
-#                file_basename = '{}_{}_simpoint{}'.format(
-#                    benchmark, inp_info['name'], simpoint_info['id'])
-#                trace_path = '{}/{}_brtrace.bz2'.format(
-#                    traces_dir, file_basename)
-#                dataset_path = '{}/{}_dataset.hdf5'.format(
-#                    datasets_dir, file_basename)
-#                
-#                if os.path.exists(dataset_path): continue
-#                work_items.append((trace_path, dataset_path, hard_brs))
-    return work_items
 
 
 def gen_dataset(trace_path, dataset_path, hard_brs):
