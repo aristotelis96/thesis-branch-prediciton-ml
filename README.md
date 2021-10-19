@@ -28,7 +28,7 @@ and
 
 You can find code for [Tarsa](https://arxiv.org/abs/1906.08170) predictor inside `src/models.py` as well
 as some other branch predicting models, like LSTMs, which were used for training and evaluation.
-Also, inside `src/branchnet` you can find code for BranchNet predictor which was also used in this project.
+Also, inside `src/branchnet` you can find code for [BranchNet](https://github.com/siavashzk/BranchNet) predictor which was also used in this project.
 
 # Train models
 
@@ -58,8 +58,8 @@ I evaluated each model using `src/BatchDict_testerAll.py`. This script reads
 models on predicting H2P branches found accross the trace.
 
 In order to speed things up, the script
-parses the history and evaluates models when reaching a `batch` thresehold (ideally the script
-tried to calculate the maximum available batchSize that can fit inside the GPU).
+parses the history and evaluates models when reaching a `batch` threshold (ideally the script
+tries to calculate the maximum available batchSize that can fit inside the GPU).
 
 The result is stored in two different folders. 
 * `src/outputs/[benchmark]/resultStats/[model]` contains
