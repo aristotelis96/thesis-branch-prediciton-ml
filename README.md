@@ -1,14 +1,11 @@
-<p align="center">
-  <h1 align="center"> Branch Prediction using artificial neural networks </h1>
-  <p> 
-  This repository is my thesis titled "Branch Prediction using artificial neural networks".
-  Here you will find all the code needed to implement, train and evaluate models for branch prediction.
-  The dataset was created using an extended version of <i> ChampSim </i> Simulator. You can find the 
-  updated version I used for my thesis <a url='https://github.com/aristotelis96/ChampSim'>here</a>.
-  Also this repository includes code from <a url='https://github.com/siavashzk/BranchNet'>BranchNet</a>
-  repository.
-  <p>
-</p>
+# Branch Prediction using artificial neural networks
+
+This repository is my thesis titled "Branch Prediction using artificial neural networks".
+Here you will find all the code needed to implement, train and evaluate models for branch prediction.
+The dataset was created using an extended version of ChampSim Simulator. You can find the 
+updated version I used for my thesis [here](https://github.com/aristotelis96/ChampSim).
+Also this repository includes code from [BranchNet](https://github.com/siavashzk/BranchNet)
+repository.
 
 # ChampSim
 
